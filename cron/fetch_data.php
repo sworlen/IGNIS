@@ -2,60 +2,126 @@
 
 declare(strict_types=1);
 
+set_time_limit(300);
+mb_internal_encoding('UTF-8');
+
+if (PHP_SAPI !== 'cli') {
+    header('Content-Type: text/plain; charset=UTF-8');
+}
+
 /**
- * Cron skript pro stažení blížících se release dat z TMDB a uložení do DB.
- *
- * Spuštění (příklad):
- * php /path/to/project/cron/fetch_data.php
- *
- * Nutné ENV proměnné:
- * - TMDB_API_KEY
- * Volitelné:
- * - TMDB_REGION (default CZ)
- * - DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
+ * Vlož sem svůj reálný TMDB API klíč.
  */
+$tmdb_api_key = 'VLOZ_SVUJ_TMDB_API_KLIC';
+
+/**
+ * Tajný token pro spuštění cron endpointu.
+ */
+$cron_secret_token = 'moje_heslo';
+
+$errorLogFile = __DIR__ . '/cron_errors.log';
+
+/**
+ * Zaloguje chybu do cron_errors.log.
+ */
+function logCronError(string $message, string $errorLogFile): void
+{
+    $line = sprintf("[%s] %s\n", date('Y-m-d H:i:s'), $message);
+    error_log($line, 3, $errorLogFile);
+}
+
+/**
+ * Vrátí token z URL nebo CLI argumentu (--token=...).
+ */
+function getProvidedToken(): string
+{
+    if (PHP_SAPI === 'cli') {
+        global $argv;
+        if (!is_array($argv)) {
+            return '';
+        }
+
+        foreach ($argv as $argument) {
+            if (str_starts_with($argument, '--token=')) {
+                return (string) substr($argument, 8);
+            }
+        }
+
+        return '';
+    }
+
+    return isset($_GET['token']) ? (string) $_GET['token'] : '';
+}
+
+$providedToken = getProvidedToken();
+if ($providedToken === '' || !hash_equals($cron_secret_token, $providedToken)) {
+    $message = 'Unauthorized access attempt: invalid token.';
+    logCronError($message, $errorLogFile);
+    http_response_code(403);
+    echo "Neplatný token.\n";
+    exit(1);
+}
+
+if ($tmdb_api_key === '' || $tmdb_api_key === 'VLOZ_SVUJ_TMDB_API_KLIC') {
+    $message = 'TMDB API key is missing or placeholder value is used.';
+    logCronError($message, $errorLogFile);
+    echo "Chybí TMDB API klíč.\n";
+    exit(1);
+}
 
 require __DIR__ . '/../includes/db.php';
 
 if (!$pdo instanceof PDO) {
-    fwrite(STDERR, "DB connection failed.\n");
+    $message = 'DB connection failed' . (isset($dbError) && $dbError ? ': ' . $dbError : '.');
+    logCronError($message, $errorLogFile);
+    echo "DB connection failed.\n";
     exit(1);
 }
 
-$apiKey = getenv('TMDB_API_KEY') ?: '';
-$region = getenv('TMDB_REGION') ?: 'CZ';
-
-if ($apiKey === '') {
-    fwrite(STDERR, "Missing TMDB_API_KEY environment variable.\n");
-    exit(1);
-}
-
-$today = new DateTimeImmutable('today');
-$windowEnd = $today->modify('+60 days');
-
+$endpoint = 'https://api.themoviedb.org/3/movie/upcoming';
 $query = http_build_query([
-    'api_key' => $apiKey,
+    'api_key' => $tmdb_api_key,
     'language' => 'cs-CZ',
-    'region' => $region,
-    'release_date.gte' => $today->format('Y-m-d'),
-    'release_date.lte' => $windowEnd->format('Y-m-d'),
-    'sort_by' => 'release_date.asc',
+    'region' => 'CZ',
     'page' => 1,
 ]);
+$url = $endpoint . '?' . $query;
 
-$url = 'https://api.themoviedb.org/3/discover/movie?' . $query;
-$payload = @file_get_contents($url);
+$ch = curl_init($url);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 15,
+    CURLOPT_TIMEOUT => 45,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTPGET => true,
+]);
 
-if ($payload === false) {
-    fwrite(STDERR, "Failed to fetch data from TMDB.\n");
+$responseBody = curl_exec($ch);
+$curlError = curl_error($ch);
+$httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+if ($responseBody === false) {
+    logCronError('cURL request failed: ' . $curlError, $errorLogFile);
+    echo "Stahování z TMDB selhalo.\n";
     exit(1);
 }
 
-$data = json_decode($payload, true);
+if ($httpCode !== 200) {
+    $bodyPreview = mb_substr((string) $responseBody, 0, 300);
+    logCronError("TMDB API HTTP {$httpCode}. Response: {$bodyPreview}", $errorLogFile);
+    echo "TMDB API vrátilo HTTP {$httpCode}.\n";
+    exit(1);
+}
+
+$data = json_decode((string) $responseBody, true);
 if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
-    fwrite(STDERR, "Invalid TMDB response format.\n");
+    logCronError('Invalid TMDB response format.', $errorLogFile);
+    echo "Neplatný formát dat z TMDB.\n";
     exit(1);
 }
+
+$topMovies = array_slice($data['results'], 0, 20);
 
 $insertSql = '
     INSERT INTO releases (title, platform, release_date, note, source, external_id)
@@ -70,21 +136,21 @@ $insertSql = '
 $statement = $pdo->prepare($insertSql);
 $savedCount = 0;
 
-foreach ($data['results'] as $item) {
-    if (!is_array($item)) {
+foreach ($topMovies as $movie) {
+    if (!is_array($movie)) {
         continue;
     }
 
-    $title = trim((string) ($item['title'] ?? ''));
-    $releaseDate = (string) ($item['release_date'] ?? '');
-    $externalId = isset($item['id']) ? (string) $item['id'] : '';
+    $title = trim((string) ($movie['title'] ?? ''));
+    $releaseDate = (string) ($movie['release_date'] ?? '');
+    $externalId = isset($movie['id']) ? (string) $movie['id'] : '';
 
     if ($title === '' || $releaseDate === '' || $externalId === '') {
         continue;
     }
 
-    $note = (string) ($item['overview'] ?? '');
-    $note = mb_substr(trim($note), 0, 500);
+    $overview = trim((string) ($movie['overview'] ?? ''));
+    $note = mb_substr($overview, 0, 500);
 
     $statement->execute([
         'title' => $title,
@@ -98,4 +164,4 @@ foreach ($data['results'] as $item) {
     $savedCount++;
 }
 
-fwrite(STDOUT, sprintf("Saved/updated %d releases from TMDB.\n", $savedCount));
+echo "Synchronizace dokončena. Uloženo/aktualizováno: {$savedCount} filmů.\n";
