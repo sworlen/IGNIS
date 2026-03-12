@@ -29,5 +29,8 @@ CREATE TABLE IF NOT EXISTS releases (
     platform VARCHAR(120) DEFAULT NULL,
     release_date DATE NOT NULL,
     note TEXT DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    source ENUM('tmdb', 'igdb') NOT NULL DEFAULT 'tmdb',
+    external_id VARCHAR(80) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_source_external (source, external_id)
 ) ENGINE=InnoDB;
