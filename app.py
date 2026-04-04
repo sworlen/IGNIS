@@ -1393,8 +1393,8 @@ def page_stock_detail():
                 text=[f"${v:.3f}B" for v in vals],
                 textposition="outside", textfont=dict(color=C["t2"], size=10),
             ))
-            dcf_fig.update_layout(**CHART_LAYOUT, height=280, showlegend=False,
-                margin=dict(l=10,r=10,t=10,b=30))
+            dcf_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=30)},
+                height=280, showlegend=False)
             st.plotly_chart(dcf_fig, use_container_width=True, config={"displayModeBar":False})
             st.markdown(f"""
                 <div style="padding:8px 12px;background:{C['bg2']};border-radius:8px;border-left:3px solid {C['orange']};font-size:.75rem;color:{C['t3']};">
@@ -2828,9 +2828,9 @@ def page_backtesting():
             fill="tozeroy", fillcolor=with_alpha(C["red"], 0.13),
             line=dict(color=C["red"], width=1.5), name="Drawdown",
         ))
-        dd_fig.update_layout(**CHART_LAYOUT, height=180, showlegend=False,
+        dd_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=10)}, height=180, showlegend=False,
             yaxis=dict(ticksuffix="%", tickfont=dict(color=C["t2"])),
-            margin=dict(l=10,r=10,t=10,b=10))
+        )
         st.plotly_chart(dd_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Trade log
@@ -2997,8 +2997,7 @@ def page_monte_carlo():
                            annotation_text=f"Medián ${p50:.0f}")
         hist_fig.add_vline(x=p5,  line_dash="dash", line_color=C["red"],
                            annotation_text=f"P5 ${p5:.0f}")
-        hist_fig.update_layout(**CHART_LAYOUT, height=250, showlegend=False,
-            margin=dict(l=10,r=10,t=20,b=10),
+        hist_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=20,b=10)}, height=250, showlegend=False,
             xaxis=dict(tickprefix="$"), yaxis=dict(title="Četnost"))
         st.plotly_chart(hist_fig, use_container_width=True, config={"displayModeBar": False})
 
