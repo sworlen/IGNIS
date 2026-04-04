@@ -437,6 +437,12 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
     last = df.iloc[-1]
     signals = []
 
+    def _conf_adjust(score: float, confidence: float, min_factor: float = 0.55) -> float:
+        """Pull extreme scores towards neutral when data coverage is low."""
+        confidence = max(0.0, min(1.0, confidence))
+        factor = min_factor + (1 - min_factor) * confidence
+        return 50 + (score - 50) * factor
+
     # ── 1. TECHNICAL (25 %) ───────────────────
     tech_points = []
 
@@ -493,7 +499,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             tech_points.append(20); signals.append(("Bollinger", "Blízko horního pásma — potenciální korekce", False))
 
-    tech_score = np.mean(tech_points) if tech_points else 50
+    tech_score_raw = np.mean(tech_points) if tech_points else 50
+    tech_conf = min(1.0, len(tech_points) / 4)  # RSI, MACD, SMA trend, BB position
+    tech_score = _conf_adjust(tech_score_raw, tech_conf)
 
     # ── 2. FUNDAMENTALS (25 %) ───────────────
     fund_points = []
@@ -562,7 +570,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             fund_points.append(10); signals.append(("Zisková marže", f"{pm_pct:.1f} % — ztrátová", False))
 
-    fund_score = np.mean(fund_points) if fund_points else 50
+    fund_score_raw = np.mean(fund_points) if fund_points else 50
+    fund_conf = min(1.0, len(fund_points) / 5)  # P/E, PEG, ROE, D/E, margin
+    fund_score = _conf_adjust(fund_score_raw, fund_conf)
 
     # ── 3. MOMENTUM (20 %) ───────────────────
     mom_points = []
@@ -614,7 +624,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             mom_points.append(30); signals.append(("Rel. objem", f"{rvol:.1f}x — nízký zájem", False))
 
-    mom_score = np.mean(mom_points) if mom_points else 50
+    mom_score_raw = np.mean(mom_points) if mom_points else 50
+    mom_conf = min(1.0, len(mom_points) / 5)  # 52W pos, 1M, 3M, 6M, RVOL
+    mom_score = _conf_adjust(mom_score_raw, mom_conf)
 
     # ── 4. ANALYST CONSENSUS (20 %) ──────────
     ana_points = []
@@ -646,10 +658,13 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             ana_points.append(12); signals.append(("Target price upside", f"{upside:+.1f} % — analytici vidí pokles", False))
 
-    ana_score = np.mean(ana_points) if ana_points else 50
+    ana_score_raw = np.mean(ana_points) if ana_points else 50
+    ana_conf = min(1.0, len(ana_points) / 2)  # recommendation + target
+    ana_score = _conf_adjust(ana_score_raw, ana_conf)
 
     # ── 5. INSIDER ACTIVITY (10 %) ───────────
     ins_score = 50  # neutral default
+    ins_conf = 0.35
     if insider_trades:
         # Count recent filings — more Form 4 filings = more insider activity
         # We can't parse full XML here without heavy dependencies,
@@ -667,18 +682,40 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             ins_score = 45
             signals.append(("Insider aktivita", "Žádné Form-4 za 6M", False))
+        ins_conf = 1.0
     else:
         signals.append(("Insider aktivita", "Nepodařilo se načíst ze SEC EDGAR", None))
+    ins_score = _conf_adjust(ins_score, ins_conf)
 
-    # ── WEIGHTED TOTAL ────────────────────────
+    # ── WEIGHTED TOTAL (confidence-adjusted) ─
+    base_weights = {
+        "Technická analýza": 25,
+        "Fundamenty":        25,
+        "Momentum":          20,
+        "Analytici":         20,
+        "Insider aktivita":  10,
+    }
+    confidences = {
+        "Technická analýza": tech_conf,
+        "Fundamenty":        fund_conf,
+        "Momentum":          mom_conf,
+        "Analytici":         ana_conf,
+        "Insider aktivita":  ins_conf,
+    }
+    # Low-confidence component keeps some weight, but less than full-confidence one.
+    eff_weights = {k: v * (0.45 + 0.55 * confidences[k]) for k, v in base_weights.items()}
+    w_sum = sum(eff_weights.values()) or 1.0
+    norm_w = {k: v / w_sum for k, v in eff_weights.items()}
     total = (
-        tech_score * 0.25 +
-        fund_score * 0.25 +
-        mom_score  * 0.20 +
-        ana_score  * 0.20 +
-        ins_score  * 0.10
+        tech_score * norm_w["Technická analýza"] +
+        fund_score * norm_w["Fundamenty"] +
+        mom_score  * norm_w["Momentum"] +
+        ana_score  * norm_w["Analytici"] +
+        ins_score  * norm_w["Insider aktivita"]
     )
     total = max(0, min(100, total))
+    overall_conf = np.mean(list(confidences.values()))
+    signals.append(("Kvalita dat modelu", f"{overall_conf*100:.0f}% pokrytí vstupních faktorů", overall_conf >= 0.7))
 
     if total >= 80:
         label, color = "SILNĚ KOUPIT", C["green"]
@@ -703,12 +740,13 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
             "Insider aktivita":  round(ins_score,  1),
         },
         "weights": {
-            "Technická analýza": 25,
-            "Fundamenty":        25,
-            "Momentum":          20,
-            "Analytici":         20,
-            "Insider aktivita":  10,
+            "Technická analýza": round(norm_w["Technická analýza"] * 100),
+            "Fundamenty":        round(norm_w["Fundamenty"] * 100),
+            "Momentum":          round(norm_w["Momentum"] * 100),
+            "Analytici":         round(norm_w["Analytici"] * 100),
+            "Insider aktivita":  round(norm_w["Insider aktivita"] * 100),
         },
+        "confidence": round(overall_conf * 100, 1),
         "signals": signals,
     }
 
