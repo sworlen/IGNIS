@@ -1068,8 +1068,8 @@ def page_stock_detail():
             fig.add_trace(go.Candlestick(
                 x=df_c.index, open=df_c["Open"], high=df_c["High"],
                 low=df_c["Low"], close=df_c["Close"], name=ticker,
-                increasing_line_color=C["green"], decreasing_line_color=C["red"],
-                increasing_fillcolor=C["green"]+"55", decreasing_fillcolor=C["red"]+"55",
+                increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+                decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
             ), row=1, col=1)
             # SMAs
             for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
