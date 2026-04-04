@@ -1072,7 +1072,6 @@ def render_header():
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
-            st.session_state["header_ticker_input"] = ticker
             st.session_state["page"] = "Stock Detail"
             st.rerun()
 
