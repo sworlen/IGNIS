@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import json
 import os
 import requests
+from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -40,6 +41,18 @@ C = {
     "t3":        "#606075",
     "grid":      "rgba(255,255,255,0.03)",
 }
+
+def with_alpha(color: str, alpha: float) -> str:
+    alpha = max(0.0, min(1.0, alpha))
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+    if isinstance(color, str) and color.startswith("rgb(") and color.endswith(")"):
+        vals = color[4:-1]
+        return f"rgba({vals},{alpha})"
+    return color
 
 # ─────────────────────────────────────────────
 #  CSS
@@ -424,6 +437,12 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
     last = df.iloc[-1]
     signals = []
 
+    def _conf_adjust(score: float, confidence: float, min_factor: float = 0.55) -> float:
+        """Pull extreme scores towards neutral when data coverage is low."""
+        confidence = max(0.0, min(1.0, confidence))
+        factor = min_factor + (1 - min_factor) * confidence
+        return 50 + (score - 50) * factor
+
     # ── 1. TECHNICAL (25 %) ───────────────────
     tech_points = []
 
@@ -480,7 +499,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             tech_points.append(20); signals.append(("Bollinger", "Blízko horního pásma — potenciální korekce", False))
 
-    tech_score = np.mean(tech_points) if tech_points else 50
+    tech_score_raw = np.mean(tech_points) if tech_points else 50
+    tech_conf = min(1.0, len(tech_points) / 4)  # RSI, MACD, SMA trend, BB position
+    tech_score = _conf_adjust(tech_score_raw, tech_conf)
 
     # ── 2. FUNDAMENTALS (25 %) ───────────────
     fund_points = []
@@ -549,7 +570,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             fund_points.append(10); signals.append(("Zisková marže", f"{pm_pct:.1f} % — ztrátová", False))
 
-    fund_score = np.mean(fund_points) if fund_points else 50
+    fund_score_raw = np.mean(fund_points) if fund_points else 50
+    fund_conf = min(1.0, len(fund_points) / 5)  # P/E, PEG, ROE, D/E, margin
+    fund_score = _conf_adjust(fund_score_raw, fund_conf)
 
     # ── 3. MOMENTUM (20 %) ───────────────────
     mom_points = []
@@ -601,7 +624,9 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             mom_points.append(30); signals.append(("Rel. objem", f"{rvol:.1f}x — nízký zájem", False))
 
-    mom_score = np.mean(mom_points) if mom_points else 50
+    mom_score_raw = np.mean(mom_points) if mom_points else 50
+    mom_conf = min(1.0, len(mom_points) / 5)  # 52W pos, 1M, 3M, 6M, RVOL
+    mom_score = _conf_adjust(mom_score_raw, mom_conf)
 
     # ── 4. ANALYST CONSENSUS (20 %) ──────────
     ana_points = []
@@ -633,10 +658,13 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             ana_points.append(12); signals.append(("Target price upside", f"{upside:+.1f} % — analytici vidí pokles", False))
 
-    ana_score = np.mean(ana_points) if ana_points else 50
+    ana_score_raw = np.mean(ana_points) if ana_points else 50
+    ana_conf = min(1.0, len(ana_points) / 2)  # recommendation + target
+    ana_score = _conf_adjust(ana_score_raw, ana_conf)
 
     # ── 5. INSIDER ACTIVITY (10 %) ───────────
     ins_score = 50  # neutral default
+    ins_conf = 0.35
     if insider_trades:
         # Count recent filings — more Form 4 filings = more insider activity
         # We can't parse full XML here without heavy dependencies,
@@ -654,18 +682,40 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
         else:
             ins_score = 45
             signals.append(("Insider aktivita", "Žádné Form-4 za 6M", False))
+        ins_conf = 1.0
     else:
         signals.append(("Insider aktivita", "Nepodařilo se načíst ze SEC EDGAR", None))
+    ins_score = _conf_adjust(ins_score, ins_conf)
 
-    # ── WEIGHTED TOTAL ────────────────────────
+    # ── WEIGHTED TOTAL (confidence-adjusted) ─
+    base_weights = {
+        "Technická analýza": 25,
+        "Fundamenty":        25,
+        "Momentum":          20,
+        "Analytici":         20,
+        "Insider aktivita":  10,
+    }
+    confidences = {
+        "Technická analýza": tech_conf,
+        "Fundamenty":        fund_conf,
+        "Momentum":          mom_conf,
+        "Analytici":         ana_conf,
+        "Insider aktivita":  ins_conf,
+    }
+    # Low-confidence component keeps some weight, but less than full-confidence one.
+    eff_weights = {k: v * (0.45 + 0.55 * confidences[k]) for k, v in base_weights.items()}
+    w_sum = sum(eff_weights.values()) or 1.0
+    norm_w = {k: v / w_sum for k, v in eff_weights.items()}
     total = (
-        tech_score * 0.25 +
-        fund_score * 0.25 +
-        mom_score  * 0.20 +
-        ana_score  * 0.20 +
-        ins_score  * 0.10
+        tech_score * norm_w["Technická analýza"] +
+        fund_score * norm_w["Fundamenty"] +
+        mom_score  * norm_w["Momentum"] +
+        ana_score  * norm_w["Analytici"] +
+        ins_score  * norm_w["Insider aktivita"]
     )
     total = max(0, min(100, total))
+    overall_conf = np.mean(list(confidences.values()))
+    signals.append(("Kvalita dat modelu", f"{overall_conf*100:.0f}% pokrytí vstupních faktorů", overall_conf >= 0.7))
 
     if total >= 80:
         label, color = "SILNĚ KOUPIT", C["green"]
@@ -690,12 +740,13 @@ def compute_buy_score(df: pd.DataFrame, info: dict, analyst: dict, insider_trade
             "Insider aktivita":  round(ins_score,  1),
         },
         "weights": {
-            "Technická analýza": 25,
-            "Fundamenty":        25,
-            "Momentum":          20,
-            "Analytici":         20,
-            "Insider aktivita":  10,
+            "Technická analýza": round(norm_w["Technická analýza"] * 100),
+            "Fundamenty":        round(norm_w["Fundamenty"] * 100),
+            "Momentum":          round(norm_w["Momentum"] * 100),
+            "Analytici":         round(norm_w["Analytici"] * 100),
+            "Insider aktivita":  round(norm_w["Insider aktivita"] * 100),
         },
+        "confidence": round(overall_conf * 100, 1),
         "signals": signals,
     }
 
@@ -811,7 +862,7 @@ def mini_sparkline(values, color, height=55):
     fig = go.Figure(go.Scatter(
         y=values, mode="lines",
         line=dict(color=color, width=2),
-        fill="tozeroy", fillcolor=color.replace(")", ",0.12)").replace("rgb", "rgba") if "rgb" in color else color + "1f",
+        fill="tozeroy", fillcolor=with_alpha(color, 0.12),
     ))
     fig.update_layout(
         height=height, margin=dict(l=0,r=0,t=0,b=0),
@@ -1068,8 +1119,8 @@ def page_stock_detail():
             fig.add_trace(go.Candlestick(
                 x=df_c.index, open=df_c["Open"], high=df_c["High"],
                 low=df_c["Low"], close=df_c["Close"], name=ticker,
-                increasing_line_color=C["green"], decreasing_line_color=C["red"],
-                increasing_fillcolor=C["green"]+"55", decreasing_fillcolor=C["red"]+"55",
+                increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+                decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
             ), row=1, col=1)
             # SMAs
             for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
@@ -1081,7 +1132,7 @@ def page_stock_detail():
                 line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Lower"],
                 line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5,
-                fill="tonexty", fillcolor=C["purple"]+"11", showlegend=False), row=1, col=1)
+                fill="tonexty", fillcolor=with_alpha(C["purple"], 0.07), showlegend=False), row=1, col=1)
             # Volume
             vcols = [C["green"] if df_c["Close"].iloc[i]>=df_c["Open"].iloc[i] else C["red"] for i in range(len(df_c))]
             fig.add_trace(go.Bar(x=df_c.index, y=df_c["Volume"], name="Volume",
@@ -1381,8 +1432,8 @@ def page_stock_detail():
                 text=[f"${v:.3f}B" for v in vals],
                 textposition="outside", textfont=dict(color=C["t2"], size=10),
             ))
-            dcf_fig.update_layout(**CHART_LAYOUT, height=280, showlegend=False,
-                margin=dict(l=10,r=10,t=10,b=30))
+            dcf_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=30)},
+                height=280, showlegend=False)
             st.plotly_chart(dcf_fig, use_container_width=True, config={"displayModeBar":False})
             st.markdown(f"""
                 <div style="padding:8px 12px;background:{C['bg2']};border-radius:8px;border-left:3px solid {C['orange']};font-size:.75rem;color:{C['t3']};">
@@ -1474,11 +1525,11 @@ def page_stock_detail():
             rs_fig.add_trace(go.Scatter(
                 x=rs.index, y=rs.values, name=f"{ticker} / SPX",
                 line=dict(color=rs_col, width=2.2),
-                fill="tozeroy", fillcolor=rs_col + "18",
+                fill="tozeroy", fillcolor=with_alpha(rs_col, 0.09),
             ))
             rs_fig.add_hline(y=1.0, line_dash="dash", line_color=C["t3"], opacity=.6)
-            rs_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
-                yaxis=dict(tickformat=".3f", gridcolor=C["grid"]))
+            rs_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False)
+            rs_fig.update_yaxes(tickformat=".3f", gridcolor=C["grid"])
             st.plotly_chart(rs_fig, use_container_width=True, config={"displayModeBar":False})
 
             # RS moving average trend
@@ -1707,9 +1758,9 @@ def page_portfolio():
                 z=z, x=ticks, y=ticks,
                 text=text_vals, texttemplate="%{text}",
                 colorscale=[
-                    [0.0, C["red"]+"cc"],
+                    [0.0, with_alpha(C["red"], 0.8)],
                     [0.5, C["card"]],
-                    [1.0, C["green"]+"cc"],
+                    [1.0, with_alpha(C["green"], 0.8)],
                 ],
                 zmin=-1, zmax=1,
                 showscale=True,
@@ -1805,8 +1856,8 @@ def page_charts():
         fig.add_trace(go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
             name=chart_ticker,
-            increasing_line_color=C["green"], decreasing_line_color=C["red"],
-            increasing_fillcolor=C["green"]+"55", decreasing_fillcolor=C["red"]+"55",
+            increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+            decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
         ), row=1, col=1)
     elif chart_type == "Line":
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name=chart_ticker,
@@ -1814,7 +1865,7 @@ def page_charts():
     elif chart_type == "Area":
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name=chart_ticker,
             line=dict(color=C["blue"],width=2.5),
-            fill="tozeroy", fillcolor=C["blue"]+"22"), row=1, col=1)
+            fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.13)), row=1, col=1)
     elif chart_type == "OHLC":
         fig.add_trace(go.Ohlc(x=df.index, open=df["Open"], high=df["High"],
             low=df["Low"], close=df["Close"], name=chart_ticker,
@@ -1835,7 +1886,7 @@ def page_charts():
             line=dict(color=C["purple"],width=1,dash="dash"),opacity=.6),row=1,col=1)
         fig.add_trace(go.Scatter(x=df.index,y=df["BB_Lower_c"],name="BB Lower",
             line=dict(color=C["purple"],width=1,dash="dash"),opacity=.6,
-            fill="tonexty",fillcolor=C["purple"]+"11"),row=1,col=1)
+            fill="tonexty",fillcolor=with_alpha(C["purple"], 0.07)),row=1,col=1)
     if show_vwap and "VWAP" in df.columns:
         fig.add_trace(go.Scatter(x=df.index,y=df["VWAP"],name="VWAP(20d)",
             line=dict(color="#f472b6",width=1.5,dash="dashdot"),opacity=.85),row=1,col=1)
@@ -2406,10 +2457,23 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
     """Fetch data from FRED (Federal Reserve Economic Data) – no API key needed for public series."""
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        df  = pd.read_csv(url, parse_dates=["DATE"], index_col="DATE")
-        df  = df.replace(".", np.nan).dropna()
-        df  = df.astype(float)
-        return df.iloc[-count:, 0]
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=20)
+        r.raise_for_status()
+        df = pd.read_csv(StringIO(r.text))
+        if df.empty:
+            return pd.Series(dtype=float)
+
+        date_col = "DATE" if "DATE" in df.columns else df.columns[0]
+        value_cols = [c for c in df.columns if c != date_col]
+        if not value_cols:
+            return pd.Series(dtype=float)
+
+        val_col = value_cols[0]
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df[val_col] = pd.to_numeric(df[val_col].replace(".", np.nan), errors="coerce")
+        df = df.dropna(subset=[date_col, val_col]).set_index(date_col).sort_index()
+        return df[val_col].iloc[-count:]
     except Exception:
         return pd.Series(dtype=float)
 
@@ -2540,7 +2604,7 @@ def page_makro():
             mc_fig.add_trace(go.Scatter(
                 x=s.index, y=s.values, name=chart_choice,
                 line=dict(color=C["blue"], width=2.2),
-                fill="tozeroy", fillcolor=C["blue"] + "18",
+                fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.09),
             ), secondary_y=False)
             if show_sp:
                 try:
@@ -2617,11 +2681,11 @@ def page_makro():
                 x=labels, y=values, mode="lines+markers",
                 line=dict(color=yc_col, width=2.5),
                 marker=dict(size=9, color=yc_col),
-                fill="tozeroy", fillcolor=yc_col + "18",
+                fill="tozeroy", fillcolor=with_alpha(yc_col, 0.09),
             ))
             yc_fig.add_hline(y=0, line_color=C["border"])
-            yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
-                yaxis=dict(ticksuffix="%"))
+            yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False)
+            yc_fig.update_yaxes(ticksuffix="%")
             st.plotly_chart(yc_fig, use_container_width=True, config={"displayModeBar": False})
 
             # Spread table
@@ -2803,9 +2867,12 @@ def page_backtesting():
             x=result["dates"], y=result["bh_equity"], name="Buy & Hold",
             line=dict(color=C["t3"], width=1.5, dash="dash"), opacity=.7,
         ))
-        bt_fig.update_layout(**CHART_LAYOUT, height=380, showlegend=True,
+        bt_fig.update_layout(
+            **CHART_LAYOUT,
             legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
-            yaxis=dict(tickprefix="$", tickfont=dict(color=C["t2"])))
+            height=380, showlegend=True,
+        )
+        bt_fig.update_yaxes(tickprefix="$", tickfont=dict(color=C["t2"]))
         st.plotly_chart(bt_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Drawdown chart
@@ -2813,12 +2880,12 @@ def page_backtesting():
         dd   = ((eq_s / eq_s.cummax()) - 1) * 100
         dd_fig = go.Figure(go.Scatter(
             x=result["dates"][:len(dd)], y=dd.values,
-            fill="tozeroy", fillcolor=C["red"] + "22",
+            fill="tozeroy", fillcolor=with_alpha(C["red"], 0.13),
             line=dict(color=C["red"], width=1.5), name="Drawdown",
         ))
-        dd_fig.update_layout(**CHART_LAYOUT, height=180, showlegend=False,
-            yaxis=dict(ticksuffix="%", tickfont=dict(color=C["t2"])),
-            margin=dict(l=10,r=10,t=10,b=10))
+        dd_layout = {**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=10)}
+        dd_fig.update_layout(**dd_layout, height=180, showlegend=False)
+        dd_fig.update_yaxes(ticksuffix="%", tickfont=dict(color=C["t2"]))
         st.plotly_chart(dd_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Trade log
@@ -2966,10 +3033,13 @@ def page_monte_carlo():
             ))
         fig_mc.add_hline(y=lp, line_dash="dot", line_color=C["t3"], opacity=.5,
                          annotation_text="Aktuální cena", annotation_position="bottom right")
-        fig_mc.update_layout(**CHART_LAYOUT, height=420, showlegend=True,
+        fig_mc.update_layout(
+            **CHART_LAYOUT,
             legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
-            xaxis=dict(title="Dny", tickfont=dict(color=C["t2"])),
-            yaxis=dict(tickprefix="$", tickfont=dict(color=C["t2"])))
+            height=420, showlegend=True,
+        )
+        fig_mc.update_xaxes(title="Dny", tickfont=dict(color=C["t2"]))
+        fig_mc.update_yaxes(tickprefix="$", tickfont=dict(color=C["t2"]))
         st.plotly_chart(fig_mc, use_container_width=True, config={"displayModeBar": False})
 
         # Final price distribution histogram
@@ -2985,9 +3055,10 @@ def page_monte_carlo():
                            annotation_text=f"Medián ${p50:.0f}")
         hist_fig.add_vline(x=p5,  line_dash="dash", line_color=C["red"],
                            annotation_text=f"P5 ${p5:.0f}")
-        hist_fig.update_layout(**CHART_LAYOUT, height=250, showlegend=False,
-            margin=dict(l=10,r=10,t=20,b=10),
-            xaxis=dict(tickprefix="$"), yaxis=dict(title="Četnost"))
+        hist_layout = {**CHART_LAYOUT, "margin": dict(l=10,r=10,t=20,b=10)}
+        hist_fig.update_layout(**hist_layout, height=250, showlegend=False)
+        hist_fig.update_xaxes(tickprefix="$")
+        hist_fig.update_yaxes(title="Četnost")
         st.plotly_chart(hist_fig, use_container_width=True, config={"displayModeBar": False})
 
         st.markdown(f"""
