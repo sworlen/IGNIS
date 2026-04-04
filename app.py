@@ -1015,6 +1015,11 @@ def page_dashboard():
 def page_stock_detail():
     ticker = st.session_state.get("ticker","AAPL")
     st.markdown(f"<h2 class='grad' style='margin:0 0 1rem;'>🔍 {ticker} — Analýza</h2>", unsafe_allow_html=True)
+    smart_mode = st.toggle(
+        "🧠 Smart režim (méně šumu, jen důležité výstupy)",
+        value=True,
+        key="smart_ui_mode",
+    )
 
     df, info = fetch_stock(ticker, period="1y")
     if df is None or df.empty:
@@ -1043,6 +1048,16 @@ def page_stock_detail():
     sector= info.get("sector","")
     div_y = info.get("dividendYield",0) or 0
 
+    base_pills = f"""
+        <div class="fa-pill" style="background:{C['blue_d']};color:{C['blue']};">MC: ${mc/1e9:.1f}B</div>
+        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">P/E: {f"{pe:.1f}" if pe else "–"}</div>
+        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">52W: ${l52:.0f} – ${h52:.0f}</div>
+    """
+    extra_pills = f"""
+        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">Vol: {vol/1e6:.1f}M</div>
+        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">EPS: ${f"{eps:.2f}" if eps else "–"}</div>
+        <div class="fa-pill" style="background:{C['green_d']};color:{C['green']};">Div: {div_y*100:.2f}%</div>
+    """
     st.markdown(f"""
         <div class="fa-card" style="border-color:{col}30;margin-bottom:1rem;">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;">
@@ -1057,12 +1072,8 @@ def page_stock_detail():
                 </div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;">
-                <div class="fa-pill" style="background:{C['blue_d']};color:{C['blue']};">MC: ${mc/1e9:.1f}B</div>
-                <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">Vol: {vol/1e6:.1f}M</div>
-                <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">P/E: {f"{pe:.1f}" if pe else "–"}</div>
-                <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">EPS: ${f"{eps:.2f}" if eps else "–"}</div>
-                <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">52W: ${l52:.0f} – ${h52:.0f}</div>
-                <div class="fa-pill" style="background:{C['green_d']};color:{C['green']};">Div: {div_y*100:.2f}%</div>
+                {base_pills}
+                {"" if smart_mode else extra_pills}
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -1090,6 +1101,28 @@ def page_stock_detail():
         if st.button("📅 Earnings", use_container_width=True):
             st.session_state["page"] = "Earnings"
             st.rerun()
+
+    with st.expander("📎 Detail o akcii", expanded=not smart_mode):
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown(f"""
+                <div style="font-size:.83rem;color:{C['t2']};line-height:1.7;">
+                    <b>Odvětví:</b> {info.get("industry","–")}<br>
+                    <b>Země:</b> {info.get("country","–")}<br>
+                    <b>Beta:</b> {f"{info.get('beta'):.2f}" if isinstance(info.get('beta'), (int,float)) else "–"}<br>
+                    <b>Průměrný objem:</b> {f"{info.get('averageVolume',0)/1e6:.1f}M" if info.get("averageVolume") else "–"}<br>
+                </div>
+            """, unsafe_allow_html=True)
+        with d2:
+            web = info.get("website", "–")
+            st.markdown(f"""
+                <div style="font-size:.83rem;color:{C['t2']};line-height:1.7;">
+                    <b>Zaměstnanci:</b> {f"{info.get('fullTimeEmployees'):,}" if info.get("fullTimeEmployees") else "–"}<br>
+                    <b>Forward EPS:</b> {f"{info.get('forwardEps'):.2f}" if isinstance(info.get('forwardEps'), (int,float)) else "–"}<br>
+                    <b>Forward P/E:</b> {f"{info.get('forwardPE'):.2f}" if isinstance(info.get('forwardPE'), (int,float)) else "–"}<br>
+                    <b>Web:</b> <a href="{web}" target="_blank" style="color:{C['blue']};">{web}</a><br>
+                </div>
+            """, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -1193,6 +1226,15 @@ def page_stock_detail():
                 st.markdown(f"<div style='font-size:.9rem;font-weight:600;color:{C['t2']};margin-bottom:8px;'>Složky skóre</div>", unsafe_allow_html=True)
                 comp = sd["components"]
                 weights = sd["weights"]
+                if sd.get("confidence") is not None:
+                    conf = sd["confidence"]
+                    conf_col = C["green"] if conf >= 75 else C["orange"] if conf >= 55 else C["red"]
+                    st.markdown(f"""
+                        <div style="padding:8px 10px;margin-bottom:10px;border-radius:8px;background:{C['bg2']};border:1px solid {C['border']};">
+                            <span style="font-size:.8rem;color:{C['t2']};">Spolehlivost modelu:</span>
+                            <span class="mono" style="font-size:.9rem;font-weight:700;color:{conf_col};float:right;">{conf:.0f}%</span>
+                        </div>
+                    """, unsafe_allow_html=True)
                 for name_c, val in comp.items():
                     w   = weights[name_c]
                     col_c = C["green"] if val>=65 else C["orange"] if val>=45 else C["red"]
@@ -1210,7 +1252,11 @@ def page_stock_detail():
 
             st.markdown("---")
             st.markdown(f"<div style='font-size:.9rem;font-weight:600;color:{C['t2']};margin-bottom:8px;'>Detailní signály</div>", unsafe_allow_html=True)
-            for name_s, desc, bullish in sd["signals"]:
+            ranked_signals = sorted(sd["signals"], key=lambda x: 0 if x[2] is not None else 1)
+            visible_signals = ranked_signals[:6] if smart_mode else ranked_signals
+            hidden_signals = ranked_signals[6:] if smart_mode else []
+
+            for name_s, desc, bullish in visible_signals:
                 if bullish is True:
                     icon, col_s = "✅", C["green"]
                 elif bullish is False:
@@ -1224,6 +1270,22 @@ def page_stock_detail():
                         <span style="font-size:.82rem;color:{col_s};">{desc}</span>
                     </div>
                 """, unsafe_allow_html=True)
+            if hidden_signals:
+                with st.expander(f"Další signály ({len(hidden_signals)})"):
+                    for name_s, desc, bullish in hidden_signals:
+                        if bullish is True:
+                            icon, col_s = "✅", C["green"]
+                        elif bullish is False:
+                            icon, col_s = "❌", C["red"]
+                        else:
+                            icon, col_s = "⚪", C["t3"]
+                        st.markdown(f"""
+                            <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:{C['card']};border-radius:8px;margin-bottom:4px;border:1px solid {C['border']};">
+                                <span>{icon}</span>
+                                <span style="font-size:.82rem;font-weight:600;color:{C['t2']};min-width:140px;">{name_s}</span>
+                                <span style="font-size:.82rem;color:{col_s};">{desc}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
 
             st.markdown(f"""
                 <div style="margin-top:14px;padding:10px 14px;background:{C['bg2']};border-radius:8px;border-left:3px solid {C['orange']};font-size:.78rem;color:{C['t3']};">
