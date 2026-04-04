@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import json
 import os
 import requests
+from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -2418,10 +2419,23 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
     """Fetch data from FRED (Federal Reserve Economic Data) – no API key needed for public series."""
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        df  = pd.read_csv(url, parse_dates=["DATE"], index_col="DATE")
-        df  = df.replace(".", np.nan).dropna()
-        df  = df.astype(float)
-        return df.iloc[-count:, 0]
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=20)
+        r.raise_for_status()
+        df = pd.read_csv(StringIO(r.text))
+        if df.empty:
+            return pd.Series(dtype=float)
+
+        date_col = "DATE" if "DATE" in df.columns else df.columns[0]
+        value_cols = [c for c in df.columns if c != date_col]
+        if not value_cols:
+            return pd.Series(dtype=float)
+
+        val_col = value_cols[0]
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df[val_col] = pd.to_numeric(df[val_col].replace(".", np.nan), errors="coerce")
+        df = df.dropna(subset=[date_col, val_col]).set_index(date_col).sort_index()
+        return df[val_col].iloc[-count:]
     except Exception:
         return pd.Series(dtype=float)
 
