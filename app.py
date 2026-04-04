@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 #  CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinAnalyzer Pro 11.0",
+    page_title="FinAnalyzer Pro 10.0",
     layout="wide",
     page_icon="◆",
     initial_sidebar_state="collapsed",
@@ -44,7 +44,7 @@ C = {
     "grid":      "rgba(255,255,255,0.03)",
 }
 
-APP_VERSION = "11.0"
+APP_VERSION = "10.0"
 
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
