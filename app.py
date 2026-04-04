@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import json
 import os
 import requests
+import re
+import html
 from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
@@ -16,7 +18,7 @@ warnings.filterwarnings("ignore")
 #  CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinAnalyzer Pro",
+    page_title="FinAnalyzer Pro 11.0",
     layout="wide",
     page_icon="◆",
     initial_sidebar_state="collapsed",
@@ -42,6 +44,8 @@ C = {
     "grid":      "rgba(255,255,255,0.03)",
 }
 
+APP_VERSION = "11.0"
+
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
     if isinstance(color, str) and color.startswith("#") and len(color) == 7:
@@ -53,6 +57,14 @@ def with_alpha(color: str, alpha: float) -> str:
         vals = color[4:-1]
         return f"rgba({vals},{alpha})"
     return color
+
+def sanitize_ticker_input(raw: str, default: str = "AAPL") -> str:
+    """Keep ticker input stable and safe for yfinance calls."""
+    if not isinstance(raw, str):
+        return default
+    candidate = raw.strip().upper().split()[0] if raw.strip() else ""
+    candidate = re.sub(r"[^A-Z0-9\.\-\^]", "", candidate)
+    return candidate[:12] if candidate else default
 
 # ─────────────────────────────────────────────
 #  CSS
@@ -799,6 +811,8 @@ def compute_dcf(info: dict, growth_rate: float = 0.10, terminal_growth: float = 
         shares = (shares_outstanding if shares_outstanding is not None else info.get("sharesOutstanding", 1)) or 1
         cash  = info.get("totalCash", 0) or 0
         debt  = info.get("totalDebt", 0) or 0
+        if discount_rate <= terminal_growth:
+            return {"fair_value": None, "error": "Diskontní sazba musí být vyšší než terminální růst"}
         if fcf <= 0:
             return {"fair_value": None, "error": "Free cash flow není dostupný nebo záporný"}
         projected = []
@@ -839,6 +853,67 @@ def resolve_shares_outstanding(info: dict, current_price: float = None) -> dict:
             return {"value": float(inferred), "source": "marketCap / current_price (fallback)", "fallback": True}
 
     return {"value": 1.0, "source": "default=1 (fallback)", "fallback": True}
+
+def compute_risk_pack(df: pd.DataFrame, info: dict, current_price: float) -> dict:
+    """Institutional-like risk snapshot from price history + metadata."""
+    try:
+        if df is None or df.empty or "Close" not in df.columns:
+            return {}
+        rets = df["Close"].pct_change().dropna()
+        if rets.empty:
+            return {}
+        vol_daily = float(rets.std())
+        vol_annual = vol_daily * np.sqrt(252)
+        var_95_1d = float(np.quantile(rets, 0.05))
+        cum = (1 + rets).cumprod()
+        peak = cum.cummax()
+        dd = (cum / peak) - 1
+        max_dd = float(dd.min()) if not dd.empty else 0.0
+        beta = info.get("beta")
+        beta = float(beta) if isinstance(beta, (int, float)) else np.nan
+        risk_score = (min(abs(max_dd) * 100, 40) + min(vol_annual * 100, 40) + min(abs(var_95_1d) * 100, 20))
+        risk_score = min(max(risk_score, 0), 100)
+        return {
+            "vol_annual": vol_annual,
+            "var_95_1d": var_95_1d,
+            "max_drawdown": max_dd,
+            "beta": beta if np.isfinite(beta) else None,
+            "risk_score": risk_score,
+            "current_price": current_price,
+        }
+    except Exception:
+        return {}
+
+def generate_investment_memo(ticker: str, info: dict, dcf: dict, risk_pack: dict, score_data: dict) -> dict:
+    """Generate concise memo for retail + institutional workflows."""
+    fv = dcf.get("fair_value") if isinstance(dcf, dict) else None
+    cur = risk_pack.get("current_price") if isinstance(risk_pack, dict) else None
+    upside = ((fv - cur) / cur * 100) if fv and cur else None
+    score = score_data.get("score") if isinstance(score_data, dict) else None
+    risk_score = risk_pack.get("risk_score") if isinstance(risk_pack, dict) else None
+    thesis = "Neutrální"
+    if upside is not None and score is not None and risk_score is not None:
+        if upside > 20 and score >= 70 and risk_score < 55:
+            thesis = "Kandidát na akumulaci"
+        elif upside < -10 or score < 40:
+            thesis = "Spíše redukovat / vyčkat"
+        else:
+            thesis = "Selektivní držení"
+    return {
+        "ticker": ticker,
+        "company": info.get("shortName", ticker),
+        "thesis": thesis,
+        "fair_value": fv,
+        "current_price": cur,
+        "upside_pct": upside,
+        "buy_score": score,
+        "risk_score": risk_score,
+        "key_risks": [
+            "DCF je citlivé na WACC/terminal growth.",
+            "Historická volatilita se může výrazně změnit při výsledcích (earnings).",
+            "Makro režim (sazby, kreditní podmínky) může přebít fundament."
+        ],
+    }
 
 @st.cache_data(ttl=600)
 def get_unlevered_fcf_ttm(ticker: str, info: dict) -> dict:
@@ -957,7 +1032,7 @@ def render_header():
                 <span style="font-size:1.8rem;">◆</span>
                 <div>
                     <span class="grad" style="font-size:1.3rem;">FinAnalyzer Pro</span><br>
-                    <span style="font-size:0.7rem;color:{C['t3']};">Real Data · Real Decisions</span>
+                    <span style="font-size:0.7rem;color:{C['t3']};">v{APP_VERSION} · Real Data · Real Decisions</span>
                 </div>
                 <span class="status-dot" style="margin-left:4px;"></span>
             </div>
@@ -987,15 +1062,17 @@ def render_header():
     with c3:
         if "header_ticker_input" not in st.session_state:
             st.session_state["header_ticker_input"] = st.session_state.get("ticker", "AAPL")
-        ticker = st.text_input(
+        ticker_raw = st.text_input(
             "",
             key="header_ticker_input",
             placeholder="🔍 Ticker",
             label_visibility="collapsed",
-        ).upper().strip()
+        )
+        ticker = sanitize_ticker_input(ticker_raw, default=st.session_state.get("ticker", "AAPL"))
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
+            st.session_state["header_ticker_input"] = ticker
             st.session_state["page"] = "Stock Detail"
             st.rerun()
 
@@ -1104,7 +1181,8 @@ def page_dashboard():
 #  PAGE: STOCK DETAIL + BUY SCORE
 # ─────────────────────────────────────────────
 def page_stock_detail():
-    ticker = st.session_state.get("ticker","AAPL")
+    ticker = sanitize_ticker_input(st.session_state.get("ticker","AAPL"))
+    st.session_state["ticker"] = ticker
     st.markdown(f"<h2 class='grad' style='margin:0 0 1rem;'>🔍 {ticker} — Analýza</h2>", unsafe_allow_html=True)
 
     df, info = fetch_stock(ticker, period="1y")
@@ -1122,6 +1200,7 @@ def page_stock_detail():
     prev  = df["Close"].iloc[-2] if len(df)>1 else cur
     chg   = (cur-prev)/prev*100
     col   = C["green"] if chg>=0 else C["red"]
+    risk_pack = compute_risk_pack(df, info, cur)
 
     # ── Hero header ──────────────────────
     mc    = info.get("marketCap",0)
@@ -1213,7 +1292,7 @@ def page_stock_detail():
     st.markdown("---")
 
     # ── Tabs ──────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Pro Invest"])
 
     # ── TAB 1: Chart ──────────────────────
     with tab1:
@@ -1471,11 +1550,14 @@ def page_stock_detail():
         if not news:
             st.info("Žádné zprávy nebyly nalezeny.")
         for n in news[:12]:
-            title     = n.get("title","")
-            publisher = n.get("publisher","")
-            link      = n.get("link","#")
+            title     = html.escape(str(n.get("title","")))
+            publisher = html.escape(str(n.get("publisher","")))
+            link      = str(n.get("link","#")) if str(n.get("link","#")).startswith("http") else "#"
             ts        = n.get("providerPublishTime", 0)
-            dt_str    = datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M") if ts else ""
+            try:
+                dt_str = datetime.fromtimestamp(int(ts)).strftime("%d.%m.%Y %H:%M") if ts else ""
+            except Exception:
+                dt_str = ""
             st.markdown(f"""
                 <a href="{link}" target="_blank" style="text-decoration:none;">
                 <div class="fa-card" style="border-left:3px solid {C['blue']};border-radius:0 10px 10px 0;margin-bottom:8px;padding:12px 16px;">
@@ -1581,6 +1663,35 @@ def page_stock_detail():
             with d3: st.metric("Upside / Downside", f"{upside_dcf:+.1f}%")
             with d4: st.metric("Enterprise Value", f"${dcf['enterprise_val']:.1f}B")
             with d5: st.metric("Discipl. nákupní cena", f"${entry_price:.2f}" if entry_price else "–")
+
+            st.markdown(f"<div style='font-size:.85rem;font-weight:600;color:{C['t2']};margin:10px 0 6px;'>Scénáře fair value (Investor view)</div>", unsafe_allow_html=True)
+            scenarios = [
+                ("Bear", max(dcf_growth - 0.02, 0.0), max(dcf_terminal - 0.005, 0.0), min(dcf_discount + 0.01, 0.25)),
+                ("Base", dcf_growth, dcf_terminal, dcf_discount),
+                ("Bull", min(dcf_growth + 0.02, 0.60), min(dcf_terminal + 0.005, 0.08), max(dcf_discount - 0.01, 0.04)),
+            ]
+            rows = []
+            for name_s, g_s, t_s, d_s in scenarios:
+                out = compute_dcf(
+                    info,
+                    growth_rate=g_s,
+                    terminal_growth=t_s,
+                    discount_rate=d_s,
+                    years=dcf_years,
+                    base_fcf=fcf_raw,
+                    shares_outstanding=shares_out,
+                )
+                fv_s = out["fair_value"] if out and out.get("fair_value") else None
+                up_s = ((fv_s - cur) / cur * 100) if fv_s and cur else None
+                rows.append({
+                    "Scénář": name_s,
+                    "Růst FCF": f"{g_s*100:.1f}%",
+                    "Terminál": f"{t_s*100:.1f}%",
+                    "WACC": f"{d_s*100:.1f}%",
+                    "Fair Value": f"${fv_s:.2f}" if fv_s else "N/A",
+                    "Upside": f"{up_s:+.1f}%" if up_s is not None else "N/A",
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
             # Waterfall: PV of each projected year
             st.markdown(f"<div style='font-size:.85rem;font-weight:600;color:{C['t2']};margin:12px 0 6px;'>Diskontované cash flow po letech ($B)</div>", unsafe_allow_html=True)
@@ -1705,6 +1816,48 @@ def page_stock_detail():
                     {"▲" if trend_up else "▼"} {trend_text}
                     </div>
                 """, unsafe_allow_html=True)
+
+    # ── TAB 9: Pro Invest ─────────────────
+    with tab9:
+        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Profesionální přehled pro retail i institucionální workflow: risk engine, investiční memo a export.</div>", unsafe_allow_html=True)
+        if not risk_pack:
+            st.info("Risk engine nemá dostatek dat.")
+        else:
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            with rc1: st.metric("Roční volatilita", f"{risk_pack['vol_annual']*100:.1f}%")
+            with rc2: st.metric("1D VaR 95%", f"{risk_pack['var_95_1d']*100:.2f}%")
+            with rc3: st.metric("Max Drawdown", f"{risk_pack['max_drawdown']*100:.1f}%")
+            with rc4: st.metric("Risk Score", f"{risk_pack['risk_score']:.0f}/100")
+            if risk_pack.get("beta") is not None:
+                st.caption(f"Beta vs trh: {risk_pack['beta']:.2f}")
+
+        memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
+        st.markdown(f"""
+            <div class="fa-card" style="border-color:{C['blue']}30;">
+                <div style="font-size:.78rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.05em;">Investment Memo (auto-generated)</div>
+                <div style="font-size:1.1rem;font-weight:700;color:{C['t1']};margin-top:4px;">{memo['company']} ({memo['ticker']})</div>
+                <div style="font-size:.92rem;color:{C['blue']};font-weight:600;margin-top:8px;">Teze: {memo['thesis']}</div>
+                <div style="font-size:.82rem;color:{C['t2']};margin-top:8px;">
+                    Fair Value: {f"${memo['fair_value']:.2f}" if memo.get('fair_value') else "N/A"} ·
+                    Cena: {f"${memo['current_price']:.2f}" if memo.get('current_price') else "N/A"} ·
+                    Upside: {f"{memo['upside_pct']:+.1f}%" if memo.get('upside_pct') is not None else "N/A"} ·
+                    Buy Score: {memo.get('buy_score') if memo.get('buy_score') is not None else "N/A"} ·
+                    Risk Score: {f"{memo['risk_score']:.0f}" if memo.get('risk_score') is not None else "N/A"}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("**Klíčová rizika (checklist)**")
+        for r in memo.get("key_risks", []):
+            st.markdown(f"- {r}")
+
+        st.download_button(
+            "⬇️ Stáhnout Investment Memo (JSON)",
+            data=json.dumps(memo, indent=2, ensure_ascii=False),
+            file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
 def page_portfolio():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>💼 Portfolio</h2>", unsafe_allow_html=True)
@@ -3481,7 +3634,7 @@ def main():
     st.markdown("---")
     st.markdown(f"""
         <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:.72rem;color:{C['t3']};">◆ FinAnalyzer Pro · {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</span>
+            <span style="font-size:.72rem;color:{C['t3']};">◆ FinAnalyzer Pro v{APP_VERSION} · {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</span>
             <span style="font-size:.72rem;color:{C['t3']};">Data: Yahoo Finance · SEC EDGAR · Zpožděná data</span>
         </div>
     """, unsafe_allow_html=True)
