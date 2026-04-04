@@ -1489,8 +1489,8 @@ def page_stock_detail():
                 fill="tozeroy", fillcolor=with_alpha(rs_col, 0.09),
             ))
             rs_fig.add_hline(y=1.0, line_dash="dash", line_color=C["t3"], opacity=.6)
-            rs_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
-                yaxis=dict(tickformat=".3f", gridcolor=C["grid"]))
+            rs_fig.update_layout(**{**CHART_LAYOUT, "yaxis": dict(tickformat=".3f", gridcolor=C["grid"])},
+                height=320, showlegend=False)
             st.plotly_chart(rs_fig, use_container_width=True, config={"displayModeBar":False})
 
             # RS moving average trend
@@ -2632,8 +2632,8 @@ def page_makro():
                 fill="tozeroy", fillcolor=with_alpha(yc_col, 0.09),
             ))
             yc_fig.add_hline(y=0, line_color=C["border"])
-            yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
-                yaxis=dict(ticksuffix="%"))
+            yc_fig.update_layout(**{**CHART_LAYOUT, "yaxis": dict(ticksuffix="%")},
+                height=320, showlegend=False)
             st.plotly_chart(yc_fig, use_container_width=True, config={"displayModeBar": False})
 
             # Spread table
@@ -2815,9 +2815,14 @@ def page_backtesting():
             x=result["dates"], y=result["bh_equity"], name="Buy & Hold",
             line=dict(color=C["t3"], width=1.5, dash="dash"), opacity=.7,
         ))
-        bt_fig.update_layout(**CHART_LAYOUT, height=380, showlegend=True,
-            legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
-            yaxis=dict(tickprefix="$", tickfont=dict(color=C["t2"])))
+        bt_fig.update_layout(
+            **{
+                **CHART_LAYOUT,
+                "legend": dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
+                "yaxis": dict(tickprefix="$", tickfont=dict(color=C["t2"])),
+            },
+            height=380, showlegend=True,
+        )
         st.plotly_chart(bt_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Drawdown chart
@@ -2828,8 +2833,13 @@ def page_backtesting():
             fill="tozeroy", fillcolor=with_alpha(C["red"], 0.13),
             line=dict(color=C["red"], width=1.5), name="Drawdown",
         ))
-        dd_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=10)}, height=180, showlegend=False,
-            yaxis=dict(ticksuffix="%", tickfont=dict(color=C["t2"])),
+        dd_fig.update_layout(
+            **{
+                **CHART_LAYOUT,
+                "margin": dict(l=10,r=10,t=10,b=10),
+                "yaxis": dict(ticksuffix="%", tickfont=dict(color=C["t2"])),
+            },
+            height=180, showlegend=False,
         )
         st.plotly_chart(dd_fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -2978,10 +2988,15 @@ def page_monte_carlo():
             ))
         fig_mc.add_hline(y=lp, line_dash="dot", line_color=C["t3"], opacity=.5,
                          annotation_text="Aktuální cena", annotation_position="bottom right")
-        fig_mc.update_layout(**CHART_LAYOUT, height=420, showlegend=True,
-            legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
-            xaxis=dict(title="Dny", tickfont=dict(color=C["t2"])),
-            yaxis=dict(tickprefix="$", tickfont=dict(color=C["t2"])))
+        fig_mc.update_layout(
+            **{
+                **CHART_LAYOUT,
+                "legend": dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"),
+                "xaxis": dict(title="Dny", tickfont=dict(color=C["t2"])),
+                "yaxis": dict(tickprefix="$", tickfont=dict(color=C["t2"])),
+            },
+            height=420, showlegend=True,
+        )
         st.plotly_chart(fig_mc, use_container_width=True, config={"displayModeBar": False})
 
         # Final price distribution histogram
@@ -2997,8 +3012,15 @@ def page_monte_carlo():
                            annotation_text=f"Medián ${p50:.0f}")
         hist_fig.add_vline(x=p5,  line_dash="dash", line_color=C["red"],
                            annotation_text=f"P5 ${p5:.0f}")
-        hist_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=20,b=10)}, height=250, showlegend=False,
-            xaxis=dict(tickprefix="$"), yaxis=dict(title="Četnost"))
+        hist_fig.update_layout(
+            **{
+                **CHART_LAYOUT,
+                "margin": dict(l=10,r=10,t=20,b=10),
+                "xaxis": dict(tickprefix="$"),
+                "yaxis": dict(title="Četnost"),
+            },
+            height=250, showlegend=False,
+        )
         st.plotly_chart(hist_fig, use_container_width=True, config={"displayModeBar": False})
 
         st.markdown(f"""
