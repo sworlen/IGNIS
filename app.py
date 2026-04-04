@@ -198,18 +198,61 @@ def load_data() -> dict:
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE) as f:
-                return json.load(f)
+                return ensure_data_schema(json.load(f))
         except Exception:
             pass
-    return {
+    return ensure_data_schema({
         "watchlist": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"],
         "portfolio": {},
         "alerts": [],
-    }
+        "preferences": {
+            "debug_mode": False,
+            "language": "CZ",
+        },
+    })
 
 def save_data(d: dict):
     with open(DATA_FILE, "w") as f:
         json.dump(d, f, indent=2)
+
+def ensure_data_schema(d: dict) -> dict:
+    """Backfill missing keys to keep backwards compatibility."""
+    if not isinstance(d, dict):
+        return load_data()
+    d.setdefault("watchlist", ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"])
+    d.setdefault("portfolio", {})
+    d.setdefault("alerts", [])
+    prefs = d.get("preferences", {})
+    if not isinstance(prefs, dict):
+        prefs = {}
+    prefs.setdefault("debug_mode", False)
+    prefs.setdefault("language", "CZ")
+    d["preferences"] = prefs
+    return d
+
+def is_debug_mode() -> bool:
+    data = ensure_data_schema(load_data())
+    return bool(data.get("preferences", {}).get("debug_mode", False))
+
+def log_debug(message: str):
+    if is_debug_mode():
+        st.info(f"🧪 DEBUG: {message}")
+
+def normalized_ticker_input(
+    label: str,
+    key: str,
+    default: str = "AAPL",
+    placeholder: str = "",
+    label_visibility: str = "visible",
+) -> str:
+    raw_key = f"{key}_raw"
+    if raw_key not in st.session_state:
+        st.session_state[raw_key] = st.session_state.get(key, default)
+    raw = st.text_input(label, key=raw_key, placeholder=placeholder, label_visibility=label_visibility)
+    clean = sanitize_ticker_input(raw, default=default)
+    if st.session_state.get(key) != clean:
+        st.session_state[key] = clean
+    return clean
 
 # ─────────────────────────────────────────────
 #  DATA ENGINE  (cached)
@@ -221,7 +264,8 @@ def fetch_stock(ticker: str, period: str = "1y", interval: str = "1d"):
         df = s.history(period=period, interval=interval, auto_adjust=True)
         info = s.info or {}
         return df, info
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_stock failed for {ticker}: {e}")
         return None, {}
 
 @st.cache_data(ttl=300)
@@ -245,7 +289,8 @@ def fetch_multi(tickers: list) -> dict:
                 "sector": info.get("sector", "N/A"),
                 "pe": info.get("trailingPE", None),
             }
-        except Exception:
+        except Exception as e:
+            log_debug(f"fetch_multi failed for {t}: {e}")
             continue
     return out
 
@@ -277,7 +322,8 @@ def fetch_news(ticker: str) -> list:
             else:
                 normalized.append(n)
         return normalized
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_news failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -335,7 +381,8 @@ def fetch_insider_sec(ticker: str) -> list:
                     break
 
         return trades
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_insider_sec failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -362,7 +409,8 @@ def fetch_analyst_info(ticker: str) -> dict:
             "num_analysts": info.get("numberOfAnalystOpinions", 0),
             "rec_summary": rec_summary,
         }
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_analyst_info failed for {ticker}: {e}")
         return {}
 
 # ─────────────────────────────────────────────
@@ -1072,7 +1120,6 @@ def render_header():
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
-            st.session_state["header_ticker_input"] = ticker
             st.session_state["page"] = "Stock Detail"
             st.rerun()
 
@@ -1867,7 +1914,7 @@ def page_portfolio():
     # Add position
     with st.expander("➕ Přidat / upravit pozici", expanded=len(portfolio)==0):
         pc1,pc2,pc3,pc4 = st.columns(4)
-        with pc1: p_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+        with pc1: p_ticker = normalized_ticker_input("Ticker", key="portfolio_ticker", default=st.session_state.get("ticker", "AAPL"), placeholder="AAPL")
         with pc2: p_shares = st.number_input("Počet akcií", min_value=0.001, value=10.0, step=1.0)
         with pc3: p_cost   = st.number_input("Průměrná cena ($)", min_value=0.01, value=100.0, step=0.01)
         with pc4: p_sector = st.selectbox("Sektor", ["Technology","Healthcare","Finance","Energy","Consumer","Industrial","Real Estate","Other"])
@@ -2121,7 +2168,7 @@ def page_charts():
     ticker = st.session_state.get("ticker","AAPL")
 
     cc1,cc2,cc3 = st.columns([2,1,1])
-    with cc1: chart_ticker = st.text_input("Symbol", value=ticker, label_visibility="collapsed").upper().strip()
+    with cc1: chart_ticker = normalized_ticker_input("Symbol", key="charts_symbol", default=ticker, placeholder="AAPL", label_visibility="collapsed")
     with cc2: chart_type   = st.selectbox("Typ grafu", ["Candlestick","Line","Area","OHLC"], label_visibility="collapsed")
     with cc3: period_sel   = st.selectbox("Období", ["1mo","3mo","6mo","1y","2y","5y","max"], index=3, label_visibility="collapsed")
 
@@ -2325,7 +2372,7 @@ def page_insider():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>👤 Insider Trades — SEC EDGAR</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Reálné Form-4 záznamy ze SEC EDGAR (data.sec.gov). Pouze US akcie kótované na NYSE/NASDAQ.</div>", unsafe_allow_html=True)
 
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="insider_ticker", default=st.session_state.get("ticker","AAPL"), placeholder="AAPL")
     if st.button("🔍 Načíst insider data", use_container_width=True):
         st.session_state["ticker"] = ticker
         with st.spinner("Přistupuji k SEC EDGAR…"):
@@ -2382,7 +2429,7 @@ def page_insider():
 # ─────────────────────────────────────────────
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
 
     if st.button("📅 Načíst earnings data", use_container_width=True):
         st.session_state["ticker"] = ticker
@@ -2484,7 +2531,7 @@ def page_alerts():
     with st.expander("➕ Přidat alert", expanded=True):
         ac1,ac2,ac3,ac4 = st.columns(4)
         with ac1:
-            a_ticker = st.text_input("Ticker", value=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL"))).upper().strip()
+            a_ticker = normalized_ticker_input("Ticker", key="alerts_ticker", default=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL")))
         with ac2:
             a_type = st.selectbox("Typ alertu", ["Cena překročí", "Cena klesne pod", "Buy Score překročí", "Buy Score klesne pod"])
         with ac3:
@@ -2699,7 +2746,20 @@ def page_screener():
 # ─────────────────────────────────────────────
 def page_settings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>⚙️ Nastavení</h2>", unsafe_allow_html=True)
-    data = load_data()
+    data = ensure_data_schema(load_data())
+
+    st.subheader("🧭 Preference")
+    pref1, pref2 = st.columns(2)
+    prefs = data.get("preferences", {})
+    with pref1:
+        debug_mode = st.toggle("Debug mód (zobrazit technické chyby)", value=bool(prefs.get("debug_mode", False)))
+    with pref2:
+        language = st.selectbox("Jazyk UI", ["CZ", "EN"], index=0 if prefs.get("language", "CZ") == "CZ" else 1)
+    if debug_mode != bool(prefs.get("debug_mode", False)) or language != prefs.get("language", "CZ"):
+        data["preferences"]["debug_mode"] = debug_mode
+        data["preferences"]["language"] = language
+        save_data(data)
+        st.success("Preference uloženy.")
 
     st.subheader("⭐ Watchlist")
     wl = data.get("watchlist", [])
@@ -2707,7 +2767,7 @@ def page_settings():
 
     wc1, wc2 = st.columns(2)
     with wc1:
-        new_sym = st.text_input("Přidat symbol", placeholder="např. GOOG").upper().strip()
+        new_sym = normalized_ticker_input("Přidat symbol", key="settings_new_symbol", default="", placeholder="např. GOOG")
         if st.button("➕ Přidat"):
             if new_sym and new_sym not in wl:
                 wl.append(new_sym)
@@ -2746,6 +2806,20 @@ def page_settings():
                        json_str.encode("utf-8"),
                        f"finanalyzer_backup_{datetime.now().strftime('%Y%m%d')}.json",
                        "application/json")
+
+    st.markdown("---")
+    st.subheader("📥 Import")
+    uploaded = st.file_uploader("Nahrát zálohu (JSON)", type=["json"])
+    if uploaded is not None:
+        try:
+            imported = json.load(uploaded)
+            imported = ensure_data_schema(imported)
+            save_data(imported)
+            st.success("Data byla úspěšně importována.")
+            st.rerun()
+        except Exception as e:
+            st.error("Import se nezdařil. Zkontroluj prosím formát souboru.")
+            log_debug(f"Import failed: {e}")
 
     st.markdown("---")
     st.markdown(f"""
@@ -3123,7 +3197,7 @@ def page_backtesting():
 
     bc1, bc2, bc3, bc4 = st.columns(4)
     with bc1:
-        bt_ticker = st.text_input("Ticker", value="AAPL").upper().strip()
+        bt_ticker = normalized_ticker_input("Ticker", key="bt_ticker", default="AAPL")
         bt_period = st.selectbox("Období", ["1y","2y","3y","5y","10y"], index=2)
     with bc2:
         strategy = st.selectbox("Strategie", ["SMA Crossover","EMA Crossover","RSI Mean Reversion","MACD Crossover"])
@@ -3277,7 +3351,7 @@ def page_monte_carlo():
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Simuluje tisíce možných cenových trajektorií na základě historické volatility. Vizualizuj riziko a pravděpodobnost ziskovosti.</div>", unsafe_allow_html=True)
 
     mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1: mc_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    with mc1: mc_ticker = normalized_ticker_input("Ticker", key="mc_ticker", default=st.session_state.get("ticker","AAPL"))
     with mc2: mc_sims   = st.select_slider("Počet simulací", options=[100, 500, 1000, 5000, 10000], value=1000)
     with mc3: mc_days   = st.slider("Horizont (dní)", 30, 365, 252)
     with mc4: mc_period = st.selectbox("Historická data (báze)", ["1y","2y","3y","5y"], index=1)
@@ -3484,11 +3558,12 @@ def compute_piotroski(info: dict, financials_df=None, balance_df=None) -> dict:
 def page_piotroski():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🏆 Piotroski F-Score + Fundamentální Screener</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Piotroski F-Score (0–9) měří kvalitu fundamentů. Score 8–9 = silný fundament. Kombinuje profitabilitu, zadluženost a provozní efektivitu.</div>", unsafe_allow_html=True)
+    st.caption("ℹ️ Některá kritéria používají proxy metriky (např. ROE vs ROA), pokud nejsou plná data dostupná.")
 
     tab_single, tab_screen = st.tabs(["🔍 Analýza jedné akcie", "📋 Batch screener"])
 
     with tab_single:
-        ps_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+        ps_ticker = normalized_ticker_input("Ticker", key="ps_ticker", default=st.session_state.get("ticker","AAPL"))
         if st.button("📊 Spočítat F-Score", use_container_width=True):
             with st.spinner(f"Načítám fundamenty pro {ps_ticker}…"):
                 _, ps_info = fetch_stock(ps_ticker, "1y")
@@ -3610,6 +3685,8 @@ def main():
     data = load_data()
     triggered = [a for a in data.get("alerts",[]) if not a.get("triggered")]
     # (full check happens in alerts page to avoid slowing every page load)
+    if triggered:
+        st.warning(f"🔔 Máš {len(triggered)} aktivních alertů ke kontrole v záložce Alerty.")
 
     page = st.session_state["page"]
     ROUTER = {
