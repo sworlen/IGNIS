@@ -877,6 +877,16 @@ def mini_sparkline(values, color, height=55):
 # ─────────────────────────────────────────────
 PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Settings"]
 EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Settings":"⚙️"}
+CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty", "Settings"]
+NAV_LABELS = {
+    "Dashboard": "📊 Home",
+    "Stock Detail": "🔍 Akcie",
+    "Portfolio": "💼 Portfolio",
+    "Screener": "🔎 Screener",
+    "Makro": "🌍 Makro",
+    "Alerty": "🔔 Alerty",
+    "Settings": "⚙️ Nastavení",
+}
 
 def render_header():
     c1, c2, c3 = st.columns([2, 6, 2])
@@ -893,13 +903,26 @@ def render_header():
         """, unsafe_allow_html=True)
     with c2:
         cur = st.session_state.get("page", "Dashboard")
-        cols = st.columns(len(PAGES))
-        for i, page in enumerate(PAGES):
+        advanced_pages = [p for p in PAGES if p not in CORE_PAGES]
+        cols = st.columns(len(CORE_PAGES) + 1)
+        for i, page in enumerate(CORE_PAGES):
             with cols[i]:
                 kind = "primary" if page == cur else "secondary"
-                if st.button(EMOJIS[page], key=f"nav_{page}", help=page, type=kind, use_container_width=True):
+                if st.button(NAV_LABELS.get(page, EMOJIS[page]), key=f"nav_{page}", help=page, type=kind, use_container_width=True):
                     st.session_state["page"] = page
                     st.rerun()
+        with cols[-1]:
+            adv_default = "Více…"
+            adv_choice = st.selectbox(
+                "",
+                [adv_default] + advanced_pages,
+                index=0,
+                key="nav_more_select",
+                label_visibility="collapsed",
+            )
+            if adv_choice != adv_default and adv_choice != cur:
+                st.session_state["page"] = adv_choice
+                st.rerun()
     with c3:
         ticker = st.text_input("", value=st.session_state.get("ticker","AAPL"),
                                placeholder="🔍 Ticker", label_visibility="collapsed").upper().strip()
