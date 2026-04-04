@@ -791,10 +791,10 @@ def compute_seasonality(ticker: str, years: int = 10) -> pd.DataFrame:
 #  NEW: DCF FAIR VALUE CALCULATOR
 # ─────────────────────────────────────────────
 def compute_dcf(info: dict, growth_rate: float = 0.10, terminal_growth: float = 0.03,
-                discount_rate: float = 0.10, years: int = 10) -> dict:
+                discount_rate: float = 0.10, years: int = 10, base_fcf: float = None) -> dict:
     """Simple DCF valuation based on free cash flow."""
     try:
-        fcf   = info.get("freeCashflow", 0) or 0
+        fcf   = (base_fcf if base_fcf is not None else info.get("freeCashflow", 0)) or 0
         shares = info.get("sharesOutstanding", 1) or 1
         cash  = info.get("totalCash", 0) or 0
         debt  = info.get("totalDebt", 0) or 0
@@ -820,6 +820,48 @@ def compute_dcf(info: dict, growth_rate: float = 0.10, terminal_growth: float = 
         }
     except Exception as e:
         return {"fair_value": None, "error": str(e)}
+
+@st.cache_data(ttl=600)
+def get_unlevered_fcf_ttm(ticker: str, info: dict) -> dict:
+    """
+    Return unlevered FCF (TTM) primarily from cash-flow statements:
+    FCF = Operating Cash Flow - CapEx.
+    Falls back to info['freeCashflow'] only when statements are unavailable.
+    """
+    def _extract_fcf_from_cashflow(cashflow_df: pd.DataFrame) -> float:
+        if cashflow_df is None or cashflow_df.empty:
+            return None
+        ocf_labels = ["Operating Cash Flow", "Total Cash From Operating Activities"]
+        capex_labels = ["Capital Expenditure", "Capital Expenditures"]
+        ocf = None
+        capex = None
+        for lbl in ocf_labels:
+            if lbl in cashflow_df.index:
+                ocf = cashflow_df.loc[lbl].dropna().head(4).sum()
+                break
+        for lbl in capex_labels:
+            if lbl in cashflow_df.index:
+                capex = cashflow_df.loc[lbl].dropna().head(4).sum()
+                break
+        if ocf is None or capex is None:
+            return None
+        capex_abs = -capex if capex < 0 else capex
+        return float(ocf - capex_abs)
+
+    try:
+        stock = yf.Ticker(ticker)
+        fcf_q = _extract_fcf_from_cashflow(stock.quarterly_cashflow)
+        if fcf_q is not None and np.isfinite(fcf_q):
+            return {"value": fcf_q, "source": "quarterly_cashflow (TTM OCF − CapEx)", "fallback": False}
+
+        fcf_a = _extract_fcf_from_cashflow(stock.cashflow)
+        if fcf_a is not None and np.isfinite(fcf_a):
+            return {"value": fcf_a, "source": "cashflow (latest OCF − CapEx)", "fallback": False}
+    except Exception:
+        pass
+
+    fcf_info = info.get("freeCashflow", 0) or 0
+    return {"value": fcf_info, "source": "info.freeCashflow (fallback)", "fallback": True}
 
 # ─────────────────────────────────────────────
 #  NEW: RELATIVE STRENGTH vs S&P 500
@@ -1461,12 +1503,13 @@ def page_stock_detail():
             dcf_discount = st.slider("Diskontní sazba / WACC (%)", 5, 20, 10, 1) / 100
             dcf_years    = st.slider("Projekční horizont (roky)", 5, 15, 10, 1)
         with dcf_c2:
-            fcf_raw = info.get("freeCashflow", 0) or 0
+            fcf_payload = get_unlevered_fcf_ttm(ticker, info)
+            fcf_raw = fcf_payload["value"]
             st.markdown(f"<div style='font-weight:600;color:{C['t2']};margin-bottom:8px;'>Vstupní data ({ticker})</div>", unsafe_allow_html=True)
             st.markdown(f"""
                 <div style="background:{C['card']};border-radius:8px;padding:12px 14px;border:1px solid {C['border']};">
                     <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid {C['border']};">
-                        <span style="font-size:.82rem;color:{C['t2']};">Free Cash Flow (TTM)</span>
+                        <span style="font-size:.82rem;color:{C['t2']};">Free Cash Flow (TTM, unlevered)</span>
                         <span class="mono" style="font-size:.82rem;color:{C['t1']};font-weight:600;">${fcf_raw/1e9:.2f}B</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid {C['border']};">
@@ -1483,9 +1526,12 @@ def page_stock_detail():
                     </div>
                 </div>
             """, unsafe_allow_html=True)
+            st.caption(f"Zdroj FCF: {fcf_payload['source']}")
+            if fcf_payload["fallback"]:
+                st.warning("Nepodařilo se načíst OCF/CapEx z cash-flow výkazů, použit fallback z info.freeCashflow.")
 
         dcf = compute_dcf(info, growth_rate=dcf_growth, terminal_growth=dcf_terminal,
-                          discount_rate=dcf_discount, years=dcf_years)
+                          discount_rate=dcf_discount, years=dcf_years, base_fcf=fcf_raw)
         st.markdown("---")
         if dcf["error"]:
             st.warning(f"DCF nelze spočítat: {dcf['error']}")
