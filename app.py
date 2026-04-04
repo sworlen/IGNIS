@@ -41,6 +41,18 @@ C = {
     "grid":      "rgba(255,255,255,0.03)",
 }
 
+def with_alpha(color: str, alpha: float) -> str:
+    alpha = max(0.0, min(1.0, alpha))
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+    if isinstance(color, str) and color.startswith("rgb(") and color.endswith(")"):
+        vals = color[4:-1]
+        return f"rgba({vals},{alpha})"
+    return color
+
 # ─────────────────────────────────────────────
 #  CSS
 # ─────────────────────────────────────────────
@@ -811,7 +823,7 @@ def mini_sparkline(values, color, height=55):
     fig = go.Figure(go.Scatter(
         y=values, mode="lines",
         line=dict(color=color, width=2),
-        fill="tozeroy", fillcolor=color.replace(")", ",0.12)").replace("rgb", "rgba") if "rgb" in color else color + "1f",
+        fill="tozeroy", fillcolor=with_alpha(color, 0.12),
     ))
     fig.update_layout(
         height=height, margin=dict(l=0,r=0,t=0,b=0),
@@ -1068,8 +1080,8 @@ def page_stock_detail():
             fig.add_trace(go.Candlestick(
                 x=df_c.index, open=df_c["Open"], high=df_c["High"],
                 low=df_c["Low"], close=df_c["Close"], name=ticker,
-                increasing_line_color=C["green"], decreasing_line_color=C["red"],
-                increasing_fillcolor=C["green"]+"55", decreasing_fillcolor=C["red"]+"55",
+                increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+                decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
             ), row=1, col=1)
             # SMAs
             for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
@@ -1081,7 +1093,7 @@ def page_stock_detail():
                 line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5), row=1, col=1)
             fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Lower"],
                 line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5,
-                fill="tonexty", fillcolor=C["purple"]+"11", showlegend=False), row=1, col=1)
+                fill="tonexty", fillcolor=with_alpha(C["purple"], 0.07), showlegend=False), row=1, col=1)
             # Volume
             vcols = [C["green"] if df_c["Close"].iloc[i]>=df_c["Open"].iloc[i] else C["red"] for i in range(len(df_c))]
             fig.add_trace(go.Bar(x=df_c.index, y=df_c["Volume"], name="Volume",
@@ -1381,8 +1393,8 @@ def page_stock_detail():
                 text=[f"${v:.3f}B" for v in vals],
                 textposition="outside", textfont=dict(color=C["t2"], size=10),
             ))
-            dcf_fig.update_layout(**CHART_LAYOUT, height=280, showlegend=False,
-                margin=dict(l=10,r=10,t=10,b=30))
+            dcf_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=30)},
+                height=280, showlegend=False)
             st.plotly_chart(dcf_fig, use_container_width=True, config={"displayModeBar":False})
             st.markdown(f"""
                 <div style="padding:8px 12px;background:{C['bg2']};border-radius:8px;border-left:3px solid {C['orange']};font-size:.75rem;color:{C['t3']};">
@@ -1474,7 +1486,7 @@ def page_stock_detail():
             rs_fig.add_trace(go.Scatter(
                 x=rs.index, y=rs.values, name=f"{ticker} / SPX",
                 line=dict(color=rs_col, width=2.2),
-                fill="tozeroy", fillcolor=rs_col + "18",
+                fill="tozeroy", fillcolor=with_alpha(rs_col, 0.09),
             ))
             rs_fig.add_hline(y=1.0, line_dash="dash", line_color=C["t3"], opacity=.6)
             rs_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
@@ -1707,9 +1719,9 @@ def page_portfolio():
                 z=z, x=ticks, y=ticks,
                 text=text_vals, texttemplate="%{text}",
                 colorscale=[
-                    [0.0, C["red"]+"cc"],
+                    [0.0, with_alpha(C["red"], 0.8)],
                     [0.5, C["card"]],
-                    [1.0, C["green"]+"cc"],
+                    [1.0, with_alpha(C["green"], 0.8)],
                 ],
                 zmin=-1, zmax=1,
                 showscale=True,
@@ -1805,8 +1817,8 @@ def page_charts():
         fig.add_trace(go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
             name=chart_ticker,
-            increasing_line_color=C["green"], decreasing_line_color=C["red"],
-            increasing_fillcolor=C["green"]+"55", decreasing_fillcolor=C["red"]+"55",
+            increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+            decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
         ), row=1, col=1)
     elif chart_type == "Line":
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name=chart_ticker,
@@ -1814,7 +1826,7 @@ def page_charts():
     elif chart_type == "Area":
         fig.add_trace(go.Scatter(x=df.index, y=df["Close"], name=chart_ticker,
             line=dict(color=C["blue"],width=2.5),
-            fill="tozeroy", fillcolor=C["blue"]+"22"), row=1, col=1)
+            fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.13)), row=1, col=1)
     elif chart_type == "OHLC":
         fig.add_trace(go.Ohlc(x=df.index, open=df["Open"], high=df["High"],
             low=df["Low"], close=df["Close"], name=chart_ticker,
@@ -1835,7 +1847,7 @@ def page_charts():
             line=dict(color=C["purple"],width=1,dash="dash"),opacity=.6),row=1,col=1)
         fig.add_trace(go.Scatter(x=df.index,y=df["BB_Lower_c"],name="BB Lower",
             line=dict(color=C["purple"],width=1,dash="dash"),opacity=.6,
-            fill="tonexty",fillcolor=C["purple"]+"11"),row=1,col=1)
+            fill="tonexty",fillcolor=with_alpha(C["purple"], 0.07)),row=1,col=1)
     if show_vwap and "VWAP" in df.columns:
         fig.add_trace(go.Scatter(x=df.index,y=df["VWAP"],name="VWAP(20d)",
             line=dict(color="#f472b6",width=1.5,dash="dashdot"),opacity=.85),row=1,col=1)
@@ -2540,7 +2552,7 @@ def page_makro():
             mc_fig.add_trace(go.Scatter(
                 x=s.index, y=s.values, name=chart_choice,
                 line=dict(color=C["blue"], width=2.2),
-                fill="tozeroy", fillcolor=C["blue"] + "18",
+                fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.09),
             ), secondary_y=False)
             if show_sp:
                 try:
@@ -2617,7 +2629,7 @@ def page_makro():
                 x=labels, y=values, mode="lines+markers",
                 line=dict(color=yc_col, width=2.5),
                 marker=dict(size=9, color=yc_col),
-                fill="tozeroy", fillcolor=yc_col + "18",
+                fill="tozeroy", fillcolor=with_alpha(yc_col, 0.09),
             ))
             yc_fig.add_hline(y=0, line_color=C["border"])
             yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False,
@@ -2813,12 +2825,12 @@ def page_backtesting():
         dd   = ((eq_s / eq_s.cummax()) - 1) * 100
         dd_fig = go.Figure(go.Scatter(
             x=result["dates"][:len(dd)], y=dd.values,
-            fill="tozeroy", fillcolor=C["red"] + "22",
+            fill="tozeroy", fillcolor=with_alpha(C["red"], 0.13),
             line=dict(color=C["red"], width=1.5), name="Drawdown",
         ))
-        dd_fig.update_layout(**CHART_LAYOUT, height=180, showlegend=False,
+        dd_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=10,b=10)}, height=180, showlegend=False,
             yaxis=dict(ticksuffix="%", tickfont=dict(color=C["t2"])),
-            margin=dict(l=10,r=10,t=10,b=10))
+        )
         st.plotly_chart(dd_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Trade log
@@ -2985,8 +2997,7 @@ def page_monte_carlo():
                            annotation_text=f"Medián ${p50:.0f}")
         hist_fig.add_vline(x=p5,  line_dash="dash", line_color=C["red"],
                            annotation_text=f"P5 ${p5:.0f}")
-        hist_fig.update_layout(**CHART_LAYOUT, height=250, showlegend=False,
-            margin=dict(l=10,r=10,t=20,b=10),
+        hist_fig.update_layout(**{**CHART_LAYOUT, "margin": dict(l=10,r=10,t=20,b=10)}, height=250, showlegend=False,
             xaxis=dict(tickprefix="$"), yaxis=dict(title="Četnost"))
         st.plotly_chart(hist_fig, use_container_width=True, config={"displayModeBar": False})
 
