@@ -854,6 +854,67 @@ def resolve_shares_outstanding(info: dict, current_price: float = None) -> dict:
 
     return {"value": 1.0, "source": "default=1 (fallback)", "fallback": True}
 
+def compute_risk_pack(df: pd.DataFrame, info: dict, current_price: float) -> dict:
+    """Institutional-like risk snapshot from price history + metadata."""
+    try:
+        if df is None or df.empty or "Close" not in df.columns:
+            return {}
+        rets = df["Close"].pct_change().dropna()
+        if rets.empty:
+            return {}
+        vol_daily = float(rets.std())
+        vol_annual = vol_daily * np.sqrt(252)
+        var_95_1d = float(np.quantile(rets, 0.05))
+        cum = (1 + rets).cumprod()
+        peak = cum.cummax()
+        dd = (cum / peak) - 1
+        max_dd = float(dd.min()) if not dd.empty else 0.0
+        beta = info.get("beta")
+        beta = float(beta) if isinstance(beta, (int, float)) else np.nan
+        risk_score = (min(abs(max_dd) * 100, 40) + min(vol_annual * 100, 40) + min(abs(var_95_1d) * 100, 20))
+        risk_score = min(max(risk_score, 0), 100)
+        return {
+            "vol_annual": vol_annual,
+            "var_95_1d": var_95_1d,
+            "max_drawdown": max_dd,
+            "beta": beta if np.isfinite(beta) else None,
+            "risk_score": risk_score,
+            "current_price": current_price,
+        }
+    except Exception:
+        return {}
+
+def generate_investment_memo(ticker: str, info: dict, dcf: dict, risk_pack: dict, score_data: dict) -> dict:
+    """Generate concise memo for retail + institutional workflows."""
+    fv = dcf.get("fair_value") if isinstance(dcf, dict) else None
+    cur = risk_pack.get("current_price") if isinstance(risk_pack, dict) else None
+    upside = ((fv - cur) / cur * 100) if fv and cur else None
+    score = score_data.get("score") if isinstance(score_data, dict) else None
+    risk_score = risk_pack.get("risk_score") if isinstance(risk_pack, dict) else None
+    thesis = "Neutrální"
+    if upside is not None and score is not None and risk_score is not None:
+        if upside > 20 and score >= 70 and risk_score < 55:
+            thesis = "Kandidát na akumulaci"
+        elif upside < -10 or score < 40:
+            thesis = "Spíše redukovat / vyčkat"
+        else:
+            thesis = "Selektivní držení"
+    return {
+        "ticker": ticker,
+        "company": info.get("shortName", ticker),
+        "thesis": thesis,
+        "fair_value": fv,
+        "current_price": cur,
+        "upside_pct": upside,
+        "buy_score": score,
+        "risk_score": risk_score,
+        "key_risks": [
+            "DCF je citlivé na WACC/terminal growth.",
+            "Historická volatilita se může výrazně změnit při výsledcích (earnings).",
+            "Makro režim (sazby, kreditní podmínky) může přebít fundament."
+        ],
+    }
+
 @st.cache_data(ttl=600)
 def get_unlevered_fcf_ttm(ticker: str, info: dict) -> dict:
     """
@@ -1139,6 +1200,7 @@ def page_stock_detail():
     prev  = df["Close"].iloc[-2] if len(df)>1 else cur
     chg   = (cur-prev)/prev*100
     col   = C["green"] if chg>=0 else C["red"]
+    risk_pack = compute_risk_pack(df, info, cur)
 
     # ── Hero header ──────────────────────
     mc    = info.get("marketCap",0)
@@ -1230,7 +1292,7 @@ def page_stock_detail():
     st.markdown("---")
 
     # ── Tabs ──────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Pro Invest"])
 
     # ── TAB 1: Chart ──────────────────────
     with tab1:
@@ -1754,6 +1816,48 @@ def page_stock_detail():
                     {"▲" if trend_up else "▼"} {trend_text}
                     </div>
                 """, unsafe_allow_html=True)
+
+    # ── TAB 9: Pro Invest ─────────────────
+    with tab9:
+        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Profesionální přehled pro retail i institucionální workflow: risk engine, investiční memo a export.</div>", unsafe_allow_html=True)
+        if not risk_pack:
+            st.info("Risk engine nemá dostatek dat.")
+        else:
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            with rc1: st.metric("Roční volatilita", f"{risk_pack['vol_annual']*100:.1f}%")
+            with rc2: st.metric("1D VaR 95%", f"{risk_pack['var_95_1d']*100:.2f}%")
+            with rc3: st.metric("Max Drawdown", f"{risk_pack['max_drawdown']*100:.1f}%")
+            with rc4: st.metric("Risk Score", f"{risk_pack['risk_score']:.0f}/100")
+            if risk_pack.get("beta") is not None:
+                st.caption(f"Beta vs trh: {risk_pack['beta']:.2f}")
+
+        memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
+        st.markdown(f"""
+            <div class="fa-card" style="border-color:{C['blue']}30;">
+                <div style="font-size:.78rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.05em;">Investment Memo (auto-generated)</div>
+                <div style="font-size:1.1rem;font-weight:700;color:{C['t1']};margin-top:4px;">{memo['company']} ({memo['ticker']})</div>
+                <div style="font-size:.92rem;color:{C['blue']};font-weight:600;margin-top:8px;">Teze: {memo['thesis']}</div>
+                <div style="font-size:.82rem;color:{C['t2']};margin-top:8px;">
+                    Fair Value: {f"${memo['fair_value']:.2f}" if memo.get('fair_value') else "N/A"} ·
+                    Cena: {f"${memo['current_price']:.2f}" if memo.get('current_price') else "N/A"} ·
+                    Upside: {f"{memo['upside_pct']:+.1f}%" if memo.get('upside_pct') is not None else "N/A"} ·
+                    Buy Score: {memo.get('buy_score') if memo.get('buy_score') is not None else "N/A"} ·
+                    Risk Score: {f"{memo['risk_score']:.0f}" if memo.get('risk_score') is not None else "N/A"}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("**Klíčová rizika (checklist)**")
+        for r in memo.get("key_risks", []):
+            st.markdown(f"- {r}")
+
+        st.download_button(
+            "⬇️ Stáhnout Investment Memo (JSON)",
+            data=json.dumps(memo, indent=2, ensure_ascii=False),
+            file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
 
 def page_portfolio():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>💼 Portfolio</h2>", unsafe_allow_html=True)
