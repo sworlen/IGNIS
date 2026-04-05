@@ -8,13 +8,13 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import json
 import os
-import requests
 import re
 import html
 import concurrent.futures as cf
 from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
+import requests
 
 # ─────────────────────────────────────────────
 #  CONFIG
@@ -1525,7 +1525,7 @@ def render_header():
         if "header_ticker_input" not in st.session_state:
             st.session_state["header_ticker_input"] = st.session_state.get("ticker", "AAPL")
         ticker_raw = st.text_input(
-            "",
+            "Vyhledat ticker",
             key="header_ticker_input",
             placeholder="🔍 Ticker",
             label_visibility="collapsed",
