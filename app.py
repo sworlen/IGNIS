@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -44,7 +45,7 @@ C = {
     "grid":      "rgba(148,163,184,0.10)",
 }
 
-APP_VERSION = "13.0"
+APP_VERSION = "12.0"
 
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
@@ -100,10 +101,13 @@ st.markdown(f"""
     color: {C['t1']} !important;
     border: 1px solid {C['border']} !important;
     border-radius: 12px !important;
-    font-size: 0.82rem !important;
+    font-size: 0.86rem !important;
     font-weight: 600 !important;
-    padding: 7px 14px !important;
+    padding: 8px 14px !important;
     transition: all .18s ease !important;
+    min-height: 44px !important;
+    white-space: nowrap !important;
+    line-height: 1.1 !important;
 }}
 .stButton > button:hover {{
     transform: translateY(-1px);
@@ -124,6 +128,9 @@ st.markdown(f"""
     border: 1px solid {C['border']} !important;
     color: {C['t1']} !important;
     border-radius: 12px !important;
+}}
+.stSelectbox [data-baseweb="select"] {{
+    min-width: 160px !important;
 }}
 
 /* tabs */
@@ -1465,21 +1472,21 @@ def adv_signal_blend_score(valuation_score: float, quality_score: float, momentu
 # ─────────────────────────────────────────────
 #  NAV / HEADER
 # ─────────────────────────────────────────────
-PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Options", "Dividendy", "Sektor Mapa", "Settings"]
-EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Options":"📐","Dividendy":"💰","Sektor Mapa":"🗺️","Settings":"⚙️"}
-CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty", "Settings"]
+PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Settings"]
+EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Settings":"⚙️"}
+CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty"]
 NAV_LABELS = {
     "Dashboard": "📊 Home",
     "Stock Detail": "🔍 Akcie",
-    "Portfolio": "💼 Portfolio",
+    "Portfolio": "💼 Portf.",
     "Screener": "🔎 Screener",
     "Makro": "🌍 Makro",
     "Alerty": "🔔 Alerty",
-    "Settings": "⚙️ Nastavení",
+    "Settings": "⚙️ Nastav.",
 }
 
 def render_header():
-    c1, c2, c3 = st.columns([2, 6, 2])
+    c1, c2, c3 = st.columns([2, 7, 3])
     with c1:
         st.markdown(f"""
             <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
@@ -1502,9 +1509,9 @@ def render_header():
                     st.session_state["page"] = page
                     st.rerun()
         with cols[-1]:
-            adv_default = "Více…"
+            adv_default = "Další…"
             adv_choice = st.selectbox(
-                "",
+                "Další stránky",
                 [adv_default] + advanced_pages,
                 index=0,
                 key="nav_more_select",
@@ -3405,7 +3412,13 @@ def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Live makro data z FRED (Federal Reserve). Pochopit makro = pochopit, kam půjde trh.</div>", unsafe_allow_html=True)
 
-    tab_live, tab_charts, tab_matrix, tab_yield = st.tabs(["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor × Makro korelace", "📐 Yield Curve"])
+    tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs([
+        "📊 Live indikátory",
+        "📈 Grafy trendů",
+        "🎯 Sektor × Makro korelace",
+        "📐 Yield Curve",
+        "📅 Economic Calendar",
+    ])
 
     # ── TAB 1: Live snapshot ──────────────────
     with tab_live:
@@ -3571,6 +3584,23 @@ def page_makro():
                             <div style="font-size:.7rem;color:{C['t3']};margin-top:2px;">{'Inverzní ⚠️' if val<0 else 'Normální ✅'}</div>
                         </div>
                     """, unsafe_allow_html=True)
+
+    # ── TAB 5: Investing.com Economic Calendar ─────────────
+    with tab_calendar:
+        st.caption("Události z Investing.com ekonomického kalendáře (USA).")
+        st.markdown("[Otevřít plný kalendář](https://www.investing.com/economic-calendar/)")
+        components.html(
+            '''
+            <iframe
+                src="https://sslecal2.forexprostools.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=1,2,3&features=datepicker,timezone,timeselector,filters&countries=5&calType=day&timeZone=55&lang=1"
+                width="100%"
+                height="690"
+                frameborder="0"
+                style="border:1px solid rgba(148,163,184,0.25);border-radius:12px;background:#0f172a;">
+            </iframe>
+            ''',
+            height=710,
+        )
 
 
 # ─────────────────────────────────────────────
