@@ -1495,8 +1495,8 @@ def page_stock_detail():
             st.rerun()
     with ba4:
         if st.button("📅 Earnings", use_container_width=True):
-            st.session_state["page"] = "Earnings"
-            st.rerun()
+            st.session_state["earnings_ticker"] = ticker
+            st.toast("Zůstáváš na stránce analýzy akcie. Earnings detail najdeš v sekci Earnings bez automatického přepnutí.")
 
     with st.expander("📎 Detail o akcii", expanded=True):
         d1, d2 = st.columns(2)
@@ -2600,94 +2600,153 @@ def page_insider():
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
     ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
+    def _normalize_earnings_df(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
+        w = df.copy()
+        if isinstance(w.index, pd.DatetimeIndex):
+            w["Date"] = pd.to_datetime(w.index, errors="coerce")
+        elif "Earnings Date" in w.columns:
+            w["Date"] = pd.to_datetime(w["Earnings Date"], errors="coerce")
+        else:
+            w["Date"] = pd.to_datetime(w.iloc[:, 0], errors="coerce")
+        col_map = {str(c).strip().lower().replace(" ", ""): c for c in w.columns}
+        est_col = next((col_map[k] for k in ["epsestimate", "estimate"] if k in col_map), None)
+        act_col = next((col_map[k] for k in ["reportedeps", "epsactual", "actual"] if k in col_map), None)
+        sur_col = next((col_map[k] for k in ["surprise(%)", "surprisepercent", "surprise"] if k in col_map), None)
+        out = pd.DataFrame()
+        out["Date"] = w["Date"]
+        out["EPS Estimate"] = pd.to_numeric(w[est_col], errors="coerce") if est_col else np.nan
+        out["EPS Actual"] = pd.to_numeric(w[act_col], errors="coerce") if act_col else np.nan
+        out["Surprise (%)"] = pd.to_numeric(w[sur_col], errors="coerce") if sur_col else np.nan
+        out = out.dropna(subset=["Date"]).sort_values("Date", ascending=False)
+        return out
 
-    if st.button("📅 Načíst earnings data", use_container_width=True):
+    def _fetch_earnings_payload(t: str):
+        payload = {"next_date": None, "earnings_hist": pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])}
+        s_obj = yf.Ticker(t)
+        try:
+            edf = s_obj.get_earnings_dates(limit=24)
+            payload["earnings_hist"] = _normalize_earnings_df(edf)
+        except Exception:
+            try:
+                payload["earnings_hist"] = _normalize_earnings_df(getattr(s_obj, "earnings_dates", None))
+            except Exception:
+                payload["earnings_hist"] = pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
+
+        if payload["earnings_hist"].empty:
+            try:
+                eh = getattr(s_obj, "earnings_history", None)
+                payload["earnings_hist"] = _normalize_earnings_df(eh)
+            except Exception:
+                pass
+
+        now_utc = pd.Timestamp.utcnow().tz_localize(None)
+        future = payload["earnings_hist"][payload["earnings_hist"]["Date"] >= now_utc].copy()
+        if not future.empty:
+            payload["next_date"] = future.sort_values("Date", ascending=True)["Date"].iloc[0]
+        else:
+            try:
+                cal = s_obj.calendar
+                if isinstance(cal, dict):
+                    ed_val = cal.get("Earnings Date")
+                    if ed_val:
+                        payload["next_date"] = pd.Timestamp(ed_val[0] if isinstance(ed_val, list) else ed_val)
+                elif cal is not None and hasattr(cal, "empty") and not cal.empty and "Earnings Date" in cal.index:
+                    payload["next_date"] = pd.Timestamp(cal.loc["Earnings Date"].iloc[0])
+            except Exception:
+                payload["next_date"] = None
+        return payload
+
+    load_click = st.button("📅 Načíst earnings data", use_container_width=True)
+    state_key = f"earnings_payload_{ticker}"
+    if load_click:
         st.session_state["ticker"] = ticker
-        df, info = fetch_stock(ticker, period="5y")
+        with st.spinner("Načítám earnings data..."):
+            st.session_state[state_key] = _fetch_earnings_payload(ticker)
+            st.session_state[f"earnings_info_{ticker}"] = fetch_stock(ticker, period="5y")[1]
+    if state_key not in st.session_state:
+        st.info("Klikni na „Načíst earnings data“ pro přesnou historii reportů EPS a datumy výsledků.")
+        return
 
-        # Earnings date
-        try:
-            s_obj = yf.Ticker(ticker)
-            cal   = s_obj.calendar
-            earn_date = None
-            if isinstance(cal, dict):
-                # New yfinance format: dict with "Earnings Date" key
-                ed_val = cal.get("Earnings Date")
-                if ed_val:
-                    earn_date = ed_val[0] if isinstance(ed_val, list) else ed_val
-            elif cal is not None and hasattr(cal, "empty") and not cal.empty:
-                if "Earnings Date" in cal.index:
-                    earn_date = cal.loc["Earnings Date"].iloc[0]
-        except Exception:
-            earn_date = None
+    payload = st.session_state.get(state_key, {})
+    earnings_hist = payload.get("earnings_hist", pd.DataFrame())
+    next_date = payload.get("next_date")
+    info = st.session_state.get(f"earnings_info_{ticker}", {})
 
-        # EPS history
-        try:
-            s_obj    = yf.Ticker(ticker)
-            earnings = s_obj.earnings_history
-        except Exception:
-            earnings = None
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
+        st.subheader("📅 Příští earnings")
+        if next_date is not None and pd.notna(next_date):
+            try:
+                ed = pd.Timestamp(next_date).tz_localize(None) if getattr(next_date, "tzinfo", None) else pd.Timestamp(next_date)
+                days_left = (ed.normalize() - pd.Timestamp.utcnow().tz_localize(None).normalize()).days
+                st.markdown(f"""
+                    <div style='text-align:center;'>
+                        <div class='mono' style='font-size:2rem;font-weight:800;color:{C['blue']};'>{ed.strftime('%d.%m.%Y')}</div>
+                        <div style='color:{C['t2']};margin-top:6px;'>{ed.strftime('%A')} • za {days_left} dní</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            except Exception:
+                st.write(str(next_date))
+        else:
+            st.info("Datum příštích earnings není k dispozici.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
-            st.subheader("📅 Příští earnings")
-            if earn_date:
-                try:
-                    ed = pd.Timestamp(earn_date)
-                    days_left = (ed - pd.Timestamp.now()).days
-                    st.markdown(f"""
-                        <div style='text-align:center;'>
-                            <div class='mono' style='font-size:2rem;font-weight:800;color:{C['blue']};'>{ed.strftime('%d.%m.%Y')}</div>
-                            <div style='color:{C['t2']};margin-top:6px;'>za {days_left} dní</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                except Exception:
-                    st.write(str(earn_date))
-            else:
-                st.info("Datum earnings není k dispozici.")
-            st.markdown("</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
+        st.subheader("🎯 Analyst Estimates")
+        an = fetch_analyst_info(ticker)
+        if an:
+            e1,e2 = st.columns(2)
+            with e1:
+                st.metric("Avg. target", f"${an.get('target_mean',0):.2f}" if an.get('target_mean') else "–")
+                st.metric("Rating", an.get("recommendation","–").replace("_"," ").title())
+            with e2:
+                st.metric("High target", f"${an.get('target_high',0):.2f}" if an.get('target_high') else "–")
+                st.metric("Low target",  f"${an.get('target_low',0):.2f}"  if an.get('target_low')  else "–")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        with col2:
-            st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
-            st.subheader("🎯 Analyst Estimates")
-            an = fetch_analyst_info(ticker)
-            if an:
-                e1,e2 = st.columns(2)
-                with e1:
-                    st.metric("Avg. target", f"${an.get('target_mean',0):.2f}" if an.get('target_mean') else "–")
-                    st.metric("Rating", an.get("recommendation","–").replace("_"," ").title())
-                with e2:
-                    st.metric("High target", f"${an.get('target_high',0):.2f}" if an.get('target_high') else "–")
-                    st.metric("Low target",  f"${an.get('target_low',0):.2f}"  if an.get('target_low')  else "–")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        # EPS history chart
-        if earnings is not None and not earnings.empty:
-            st.markdown("---")
-            st.subheader("📈 Historie EPS — skutečný vs. odhadovaný")
-            fig_e = go.Figure()
-            if "epsEstimate" in earnings.columns:
-                fig_e.add_trace(go.Bar(x=earnings.index, y=earnings["epsEstimate"],
-                    name="Odhad", marker_color=C["t3"], marker_opacity=0.6))
-            if "epsActual" in earnings.columns:
-                colors_e = [C["green"] if (a or 0) >= (e or 0) else C["red"]
-                            for a, e in zip(earnings.get("epsActual",[]), earnings.get("epsEstimate",[]))]
-                fig_e.add_trace(go.Bar(x=earnings.index, y=earnings["epsActual"],
-                    name="Skutečný", marker_color=colors_e, marker_opacity=0.85))
-            fig_e.update_layout(**CHART_LAYOUT, height=320, barmode="group",
-                legend=dict(orientation="h",bgcolor="rgba(0,0,0,0)"))
-            st.plotly_chart(fig_e, use_container_width=True, config={"displayModeBar":False})
-
-        # Key financials
+    if earnings_hist is not None and not earnings_hist.empty:
+        hist = earnings_hist[earnings_hist["Date"] < pd.Timestamp.utcnow().tz_localize(None)].copy()
+        hist = hist.sort_values("Date", ascending=True).tail(8)
+        hist["Label"] = hist["Date"].dt.strftime("%b %Y")
         st.markdown("---")
-        st.subheader("💰 Klíčová finanční data")
-        if info:
-            fc1,fc2,fc3,fc4 = st.columns(4)
-            with fc1: st.metric("Revenue (TTM)", f"${info.get('totalRevenue',0)/1e9:.1f}B" if info.get('totalRevenue') else "–")
-            with fc2: st.metric("Gross Profit",  f"${info.get('grossProfits',0)/1e9:.1f}B" if info.get('grossProfits') else "–")
-            with fc3: st.metric("EBITDA",        f"${info.get('ebitda',0)/1e9:.1f}B" if info.get('ebitda') else "–")
-            with fc4: st.metric("Free Cash Flow",f"${info.get('freeCashflow',0)/1e9:.1f}B" if info.get('freeCashflow') else "–")
+        st.subheader("📈 Historie EPS — skutečný vs. odhadovaný")
+        fig_e = go.Figure()
+        fig_e.add_trace(go.Bar(
+            x=hist["Label"], y=hist["EPS Estimate"],
+            name="Odhad", marker_color=C["t3"], marker_opacity=0.6
+        ))
+        colors_e = [C["green"] if (a if pd.notna(a) else -np.inf) >= (e if pd.notna(e) else -np.inf) else C["red"]
+                    for a, e in zip(hist["EPS Actual"], hist["EPS Estimate"])]
+        fig_e.add_trace(go.Bar(
+            x=hist["Label"], y=hist["EPS Actual"],
+            name="Skutečný", marker_color=colors_e, marker_opacity=0.85
+        ))
+        fig_e.update_layout(**CHART_LAYOUT, height=340, barmode="group",
+            legend=dict(orientation="h", bgcolor="rgba(0,0,0,0)"))
+        st.plotly_chart(fig_e, use_container_width=True, config={"displayModeBar":False})
+
+        tbl = hist.sort_values("Date", ascending=False).copy()
+        tbl["Date"] = tbl["Date"].dt.strftime("%Y-%m-%d")
+        tbl["Day"] = pd.to_datetime(tbl["Date"], errors="coerce").dt.strftime("%a")
+        tbl["EPS Estimate"] = tbl["EPS Estimate"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+        tbl["EPS Actual"] = tbl["EPS Actual"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+        tbl["Surprise (%)"] = tbl["Surprise (%)"].map(lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A")
+        st.dataframe(tbl[["Date", "Day", "EPS Estimate", "EPS Actual", "Surprise (%)"]], use_container_width=True, hide_index=True)
+    else:
+        st.warning("Historie earnings (EPS estimate vs actual) není pro tento ticker dostupná.")
+
+    st.markdown("---")
+    st.subheader("💰 Klíčová finanční data")
+    if info:
+        fc1,fc2,fc3,fc4 = st.columns(4)
+        with fc1: st.metric("Revenue (TTM)", f"${info.get('totalRevenue',0)/1e9:.1f}B" if info.get('totalRevenue') else "–")
+        with fc2: st.metric("Gross Profit",  f"${info.get('grossProfits',0)/1e9:.1f}B" if info.get('grossProfits') else "–")
+        with fc3: st.metric("EBITDA",        f"${info.get('ebitda',0)/1e9:.1f}B" if info.get('ebitda') else "–")
+        with fc4: st.metric("Free Cash Flow",f"${info.get('freeCashflow',0)/1e9:.1f}B" if info.get('freeCashflow') else "–")
 
 # ─────────────────────────────────────────────
 #  PAGE: ALERTY
