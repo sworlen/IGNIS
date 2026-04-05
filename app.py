@@ -2600,16 +2600,20 @@ def page_insider():
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
     ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
+    def _to_naive_utc_datetime(s) -> pd.Series:
+        # Handles tz-aware and tz-naive values uniformly (always returns tz-naive UTC).
+        return pd.to_datetime(s, errors="coerce", utc=True).dt.tz_convert(None)
+
     def _normalize_earnings_df(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
         w = df.copy()
         if isinstance(w.index, pd.DatetimeIndex):
-            w["Date"] = pd.to_datetime(w.index, errors="coerce")
+            w["Date"] = _to_naive_utc_datetime(w.index)
         elif "Earnings Date" in w.columns:
-            w["Date"] = pd.to_datetime(w["Earnings Date"], errors="coerce")
+            w["Date"] = _to_naive_utc_datetime(w["Earnings Date"])
         else:
-            w["Date"] = pd.to_datetime(w.iloc[:, 0], errors="coerce")
+            w["Date"] = _to_naive_utc_datetime(w.iloc[:, 0])
         col_map = {str(c).strip().lower().replace(" ", ""): c for c in w.columns}
         est_col = next((col_map[k] for k in ["epsestimate", "estimate"] if k in col_map), None)
         act_col = next((col_map[k] for k in ["reportedeps", "epsactual", "actual"] if k in col_map), None)
@@ -2641,7 +2645,7 @@ def page_earnings():
             except Exception:
                 pass
 
-        now_utc = pd.Timestamp.utcnow().tz_localize(None)
+        now_utc = pd.Timestamp.now(tz="UTC").tz_convert(None)
         future = payload["earnings_hist"][payload["earnings_hist"]["Date"] >= now_utc].copy()
         if not future.empty:
             payload["next_date"] = future.sort_values("Date", ascending=True)["Date"].iloc[0]
@@ -2680,8 +2684,10 @@ def page_earnings():
         st.subheader("📅 Příští earnings")
         if next_date is not None and pd.notna(next_date):
             try:
-                ed = pd.Timestamp(next_date).tz_localize(None) if getattr(next_date, "tzinfo", None) else pd.Timestamp(next_date)
-                days_left = (ed.normalize() - pd.Timestamp.utcnow().tz_localize(None).normalize()).days
+                ed = pd.Timestamp(next_date)
+                if getattr(ed, "tzinfo", None) is not None:
+                    ed = ed.tz_convert(None)
+                days_left = (ed.normalize() - pd.Timestamp.now(tz="UTC").tz_convert(None).normalize()).days
                 st.markdown(f"""
                     <div style='text-align:center;'>
                         <div class='mono' style='font-size:2rem;font-weight:800;color:{C['blue']};'>{ed.strftime('%d.%m.%Y')}</div>
@@ -2709,7 +2715,7 @@ def page_earnings():
         st.markdown("</div>", unsafe_allow_html=True)
 
     if earnings_hist is not None and not earnings_hist.empty:
-        hist = earnings_hist[earnings_hist["Date"] < pd.Timestamp.utcnow().tz_localize(None)].copy()
+        hist = earnings_hist[earnings_hist["Date"] < pd.Timestamp.now(tz="UTC").tz_convert(None)].copy()
         hist = hist.sort_values("Date", ascending=True).tail(8)
         hist["Label"] = hist["Date"].dt.strftime("%b %Y")
         st.markdown("---")
