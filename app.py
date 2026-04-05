@@ -25,26 +25,26 @@ st.set_page_config(
 )
 
 C = {
-    "bg":        "#0a0a0c",
-    "bg2":       "#101014",
-    "card":      "#16161c",
-    "border":    "rgba(255,255,255,0.07)",
-    "border2":   "rgba(255,255,255,0.14)",
-    "green":     "#00e676",
-    "green_d":   "rgba(0,230,118,0.12)",
-    "red":       "#ff3d5a",
-    "red_d":     "rgba(255,61,90,0.12)",
-    "blue":      "#00b4d8",
-    "blue_d":    "rgba(0,180,216,0.12)",
-    "purple":    "#7c3aed",
+    "bg":        "#070b14",
+    "bg2":       "#0d1526",
+    "card":      "rgba(18, 28, 46, 0.72)",
+    "border":    "rgba(125, 211, 252, 0.22)",
+    "border2":   "rgba(148, 163, 184, 0.28)",
+    "green":     "#22c55e",
+    "green_d":   "rgba(34,197,94,0.16)",
+    "red":       "#f43f5e",
+    "red_d":     "rgba(244,63,94,0.14)",
+    "blue":      "#38bdf8",
+    "blue_d":    "rgba(56,189,248,0.16)",
+    "purple":    "#a78bfa",
     "orange":    "#f59e0b",
-    "t1":        "#f0f0f5",
-    "t2":        "#9090aa",
-    "t3":        "#606075",
-    "grid":      "rgba(255,255,255,0.03)",
+    "t1":        "#e2e8f0",
+    "t2":        "#94a3b8",
+    "t3":        "#64748b",
+    "grid":      "rgba(148,163,184,0.10)",
 }
 
-APP_VERSION = "12.0"
+APP_VERSION = "13.0"
 
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
@@ -75,58 +75,75 @@ st.markdown(f"""
 
 *, *::before, *::after {{ box-sizing: border-box; font-family: 'Inter', sans-serif; }}
 
-.stApp {{ background: {C['bg']}; color: {C['t1']}; }}
+.stApp {{
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(56,189,248,0.18), transparent 45%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(167,139,250,0.15), transparent 40%),
+      linear-gradient(180deg, #060a12 0%, #0a1221 55%, #0b1324 100%);
+    color: {C['t1']};
+}}
+
+/* Glass containers */
+.fa-card {{
+    background: {C['card']};
+    border: 1px solid {C['border']};
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(2, 8, 23, 0.35);
+}}
 
 /* buttons */
 .stButton > button {{
-    background: transparent !important;
-    color: {C['t2']} !important;
+    background: linear-gradient(180deg, rgba(30,41,59,0.7), rgba(15,23,42,0.7)) !important;
+    color: {C['t1']} !important;
     border: 1px solid {C['border']} !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
     font-size: 0.82rem !important;
-    font-weight: 500 !important;
-    padding: 6px 14px !important;
-    transition: all .2s !important;
+    font-weight: 600 !important;
+    padding: 7px 14px !important;
+    transition: all .18s ease !important;
 }}
 .stButton > button:hover {{
+    transform: translateY(-1px);
     border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
-    background: {C['blue_d']} !important;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.14) !important;
 }}
 .stButton > button[kind="primary"] {{
-    background: {C['blue_d']} !important;
-    border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(167,139,250,0.22)) !important;
+    border-color: rgba(125,211,252,0.48) !important;
+    color: #eaf6ff !important;
 }}
 
 /* inputs */
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input,
 .stSelectbox > div > div {{
-    background: {C['card']} !important;
-    border-color: {C['border']} !important;
+    background: rgba(15, 23, 42, 0.78) !important;
+    border: 1px solid {C['border']} !important;
     color: {C['t1']} !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
 }}
 
 /* tabs */
 .stTabs [data-baseweb="tab-list"] {{
-    background: transparent;
-    border-bottom: 1px solid {C['border']};
+    background: rgba(15,23,42,0.35);
+    border: 1px solid {C['border']};
+    border-radius: 12px;
     gap: 4px;
+    padding: 4px;
 }}
 .stTabs [data-baseweb="tab"] {{
     background: transparent !important;
     color: {C['t2']} !important;
-    border: none !important;
-    border-radius: 8px 8px 0 0 !important;
-    font-weight: 500 !important;
-    font-size: 0.85rem !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.83rem !important;
 }}
 .stTabs [aria-selected="true"] {{
-    background: {C['blue_d']} !important;
-    color: {C['blue']} !important;
-    border-bottom: 2px solid {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.24), rgba(167,139,250,0.20)) !important;
+    color: #dff4ff !important;
 }}
 
 /* metric */
@@ -134,35 +151,33 @@ st.markdown(f"""
 [data-testid="stMetricLabel"] {{ color: {C['t2']} !important; font-size: 0.78rem !important; }}
 
 /* divider */
-hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
+hr {{ border-color: rgba(148,163,184,0.2) !important; margin: 0.9rem 0 !important; }}
 
 /* expander */
-.streamlit-expanderHeader {{ color: {C['t1']} !important; background: {C['card']} !important; border-radius: 8px !important; }}
-.streamlit-expanderContent {{ background: {C['bg2']} !important; border-radius: 0 0 8px 8px !important; }}
+.streamlit-expanderHeader {{
+    color: {C['t1']} !important;
+    background: rgba(15, 23, 42, 0.7) !important;
+    border: 1px solid {C['border']} !important;
+    border-radius: 12px !important;
+}}
+.streamlit-expanderContent {{ background: transparent !important; border-radius: 0 0 12px 12px !important; }}
 
 /* scrollbar */
-::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-::-webkit-scrollbar-track {{ background: {C['bg2']}; }}
-::-webkit-scrollbar-thumb {{ background: {C['border2']}; border-radius: 3px; }}
+::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+::-webkit-scrollbar-track {{ background: rgba(15,23,42,0.7); }}
+::-webkit-scrollbar-thumb {{ background: rgba(100,116,139,0.55); border-radius: 6px; }}
 
 /* hide streamlit chrome */
 #MainMenu, footer, header {{ visibility: hidden; }}
-.block-container {{ padding-top: 1rem !important; }}
+.block-container {{ padding-top: 0.7rem !important; max-width: 1500px; }}
 
-/* card helpers used in markdown */
-.fa-card {{
-    background: {C['card']};
-    border: 1px solid {C['border']};
-    border-radius: 14px;
-    padding: 20px 22px;
-    margin-bottom: 12px;
-}}
+/* badges/text helpers */
 .fa-pill {{
     display: inline-block;
     padding: 3px 10px;
     border-radius: 20px;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     margin: 2px;
 }}
 .g {{ color: {C['green']}; font-weight: 700; }}
@@ -170,21 +185,22 @@ hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
 .b {{ color: {C['blue']}; font-weight: 700; }}
 .mono {{ font-family: 'JetBrains Mono', monospace; }}
 .grad {{
-    background: linear-gradient(135deg, {C['blue']}, {C['purple']});
+    background: linear-gradient(135deg, #7dd3fc 0%, #a78bfa 45%, #22d3ee 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
     font-weight: 800;
+    letter-spacing: 0.01em;
 }}
 .status-dot {{
-    display: inline-block; width: 7px; height: 7px;
+    display: inline-block; width: 8px; height: 8px;
     border-radius: 50%; background: {C['green']};
-    box-shadow: 0 0 8px {C['green']};
-    animation: pulse 2s infinite;
+    box-shadow: 0 0 10px {C['green']};
+    animation: pulse 1.8s infinite;
 }}
 @keyframes pulse {{
     0%,100% {{ opacity:1; transform:scale(1); }}
-    50% {{ opacity:.6; transform:scale(1.3); }}
+    50% {{ opacity:.6; transform:scale(1.35); }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -292,6 +308,40 @@ def fetch_multi(tickers: list) -> dict:
         except Exception as e:
             log_debug(f"fetch_multi failed for {t}: {e}")
             continue
+    return out
+
+@st.cache_data(ttl=900)
+def fetch_market_regime() -> dict:
+    """Quick market regime snapshot using liquid macro proxies."""
+    proxies = {
+        "SPY": "SPY",
+        "QQQ": "QQQ",
+        "IWM": "IWM",
+        "TLT": "TLT",
+        "VIX": "^VIX",
+    }
+    out = {}
+    for k, sym in proxies.items():
+        try:
+            h = yf.Ticker(sym).history(period="3mo")
+            if h is None or h.empty or len(h) < 22:
+                continue
+            last = float(h["Close"].iloc[-1])
+            chg_1d = (last / float(h["Close"].iloc[-2]) - 1) * 100
+            chg_1m = (last / float(h["Close"].iloc[-22]) - 1) * 100
+            out[k] = {"last": last, "d1": chg_1d, "m1": chg_1m}
+        except Exception as e:
+            log_debug(f"fetch_market_regime failed for {sym}: {e}")
+    if not out:
+        return {}
+    risk_on_score = 0
+    risk_on_score += 1 if out.get("SPY", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("QQQ", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("IWM", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("VIX", {}).get("m1", 1) < 0 else 0
+    regime = "RISK-ON" if risk_on_score >= 3 else "NEUTRAL" if risk_on_score == 2 else "RISK-OFF"
+    out["regime"] = regime
+    out["score"] = risk_on_score
     return out
 
 @st.cache_data(ttl=600)
@@ -868,11 +918,16 @@ CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor ="rgba(0,0,0,0)",
     font=dict(color=C["t1"], family="Inter"),
-    margin=dict(l=10, r=10, t=30, b=10),
+    margin=dict(l=8, r=8, t=26, b=8),
     hovermode="x unified",
-    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"]),
+    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"], tickfont=dict(color=C["t2"])),
     yaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"],
                tickfont=dict(color=C["t2"])),
+    hoverlabel=dict(
+        bgcolor="rgba(15,23,42,0.92)",
+        bordercolor=C["border2"],
+        font=dict(color=C["t1"], size=12),
+    ),
 )
 
 # ─────────────────────────────────────────────
@@ -1179,6 +1234,17 @@ def render_header():
 # ─────────────────────────────────────────────
 def page_dashboard():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📊 Market Dashboard</h2>", unsafe_allow_html=True)
+    regime = fetch_market_regime()
+    if regime:
+        reg_col = C["green"] if regime.get("regime") == "RISK-ON" else C["orange"] if regime.get("regime") == "NEUTRAL" else C["red"]
+        r1, r2, r3, r4, r5, r6 = st.columns(6)
+        with r1: st.metric("Market režim", regime.get("regime", "N/A"))
+        with r2: st.metric("Risk score", f"{regime.get('score', 0)}/4")
+        with r3: st.metric("SPY 1M", f"{regime.get('SPY', {}).get('m1', 0):+.1f}%")
+        with r4: st.metric("QQQ 1M", f"{regime.get('QQQ', {}).get('m1', 0):+.1f}%")
+        with r5: st.metric("IWM 1M", f"{regime.get('IWM', {}).get('m1', 0):+.1f}%")
+        with r6: st.metric("VIX 1M", f"{regime.get('VIX', {}).get('m1', 0):+.1f}%")
+        st.markdown(f"<div style='height:3px;border-radius:10px;background:{with_alpha(reg_col,0.55)};margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     # ── Market indices ─────────────────────
     indices = {"S&P 500":"^GSPC","NASDAQ":"^IXIC","DOW":"^DJI","VIX":"^VIX","Russell":"^RUT"}
