@@ -3035,30 +3035,47 @@ def _fred_client():
         except Exception:
             api_key = None
     if not api_key:
-        return None, "Chybí `FRED_API_KEY` v `st.secrets` (nebo v proměnné prostředí `FRED_API_KEY`)."
+        return None, None
     try:
         from fredapi import Fred
         return Fred(api_key=api_key), None
     except Exception as e:
         return None, f"Nepodařilo se inicializovat fredapi ({e})."
 
-@st.cache_data(ttl=1800)
-def fetch_fred_series(series_id: str, months: int = 60) -> pd.Series:
-    """Fetch one FRED series via fredapi; returns monthly tail with numeric values."""
-    fred, err = _fred_client()
-    if err or fred is None:
-        return pd.Series(dtype=float)
+def _fetch_fred_series_public(series_id: str, months: int = 60) -> pd.Series:
+    """
+    Public fallback without API key (pandas_datareader -> FRED).
+    """
     try:
-        s = fred.get_series(series_id)
-        if s is None or len(s) == 0:
+        from pandas_datareader import data as web
+        start = datetime.now() - timedelta(days=int(months * 31))
+        df = web.DataReader(series_id, "fred", start, datetime.now())
+        if df is None or df.empty:
             return pd.Series(dtype=float)
-        s = pd.Series(s).dropna()
+        s = pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
         s.index = pd.to_datetime(s.index)
-        s = pd.to_numeric(s, errors="coerce").dropna()
         return s.sort_index().iloc[-months:]
     except Exception as e:
-        log_debug(f"fetch_fred_series({series_id}) failed: {e}")
+        log_debug(f"_fetch_fred_series_public({series_id}) failed: {e}")
         return pd.Series(dtype=float)
+
+@st.cache_data(ttl=1800)
+def fetch_fred_series(series_id: str, months: int = 60) -> pd.Series:
+    """Fetch one FRED series (fredapi with key, else public fallback)."""
+    fred, err = _fred_client()
+    if fred is not None:
+        try:
+            s = fred.get_series(series_id)
+            if s is None or len(s) == 0:
+                return pd.Series(dtype=float)
+            s = pd.Series(s).dropna()
+            s.index = pd.to_datetime(s.index)
+            s = pd.to_numeric(s, errors="coerce").dropna()
+            return s.sort_index().iloc[-months:]
+        except Exception as e:
+            log_debug(f"fetch_fred_series fredapi({series_id}) failed: {e}")
+    # fallback path: no key or fredapi failed
+    return _fetch_fred_series_public(series_id, months=months)
 
 @st.cache_data(ttl=900)
 def fetch_macro_snapshot() -> dict:
@@ -3125,19 +3142,16 @@ def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='font-size:.84rem;color:{C['t3']};margin-bottom:1rem;'>"
-        "Makro data jsou načítána přes <b>fredapi</b> z Federal Reserve (FRED)."
+        "Makro data jsou načítána z Federal Reserve (FRED) přes <b>fredapi</b> nebo veřejný fallback bez API klíče."
         "</div>",
         unsafe_allow_html=True,
     )
 
     fred_client, fred_error = _fred_client()
     if fred_error:
-        st.error(
-            "Nepodařilo se inicializovat FRED. "
-            "Přidejte prosím `FRED_API_KEY` do `st.secrets` a restartujte aplikaci."
-        )
-        st.code('''# .streamlit/secrets.toml\nFRED_API_KEY = "YOUR_FRED_API_KEY"''')
-        return
+        st.warning(f"fredapi nebyla inicializována ({fred_error}). Přepínám na veřejný FRED fallback bez API klíče.")
+    elif fred_client is None:
+        st.info("Běží veřejný FRED režim bez API klíče (přes pandas_datareader).")
 
     tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs(
         ["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor × Makro korelace", "📐 Yield Curve", "📅 Economic Calendar"]
