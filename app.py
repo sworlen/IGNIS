@@ -20,7 +20,7 @@ import requests
 #  CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinAnalyzer Pro 11.0",
+    page_title="FinAnalyzer Pro 12.0",
     layout="wide",
     page_icon="◆",
     initial_sidebar_state="collapsed",
@@ -1170,6 +1170,44 @@ def mini_sparkline(values, color, height=55):
     )
     return fig
 
+def to_tradingview_symbol(ticker: str, info: dict = None) -> str:
+    t = sanitize_ticker_input(ticker, default="AAPL")
+    if t.startswith("^"):
+        mapping = {"^GSPC": "SP:SPX", "^IXIC": "NASDAQ:IXIC", "^DJI": "DJ:DJI", "^VIX": "CBOE:VIX"}
+        return mapping.get(t, "SP:SPX")
+    ex = (info or {}).get("exchange", "")
+    if ex in ("NMS", "NAS", "NGM", "NCM"):
+        return f"NASDAQ:{t}"
+    if ex in ("NYQ", "NYE"):
+        return f"NYSE:{t}"
+    return f"NASDAQ:{t}"
+
+def render_tradingview_chart(ticker: str, info: dict = None, interval: str = "D", height: int = 640):
+    tv_symbol = to_tradingview_symbol(ticker, info)
+    widget = f"""
+    <div class="tradingview-widget-container">
+      <div id="tradingview_chart"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "container_id": "tradingview_chart",
+        "autosize": true,
+        "symbol": "{tv_symbol}",
+        "interval": "{interval}",
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "cs",
+        "allow_symbol_change": true,
+        "studies": ["RSI@tv-basicstudies", "MASimple@tv-basicstudies", "BB@tv-basicstudies", "Volume@tv-basicstudies"],
+        "hide_top_toolbar": false,
+        "withdateranges": true
+      }});
+      </script>
+    </div>
+    """
+    components.html(widget, height=height)
+
 # ─────────────────────────────────────────────
 #  ADVANCED FINANCE TOOLKIT (v13)
 # ─────────────────────────────────────────────
@@ -1531,6 +1569,7 @@ def render_header():
             label_visibility="collapsed",
         )
         ticker = sanitize_ticker_input(ticker_raw, default=st.session_state.get("ticker", "AAPL"))
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
@@ -1703,16 +1742,6 @@ def page_stock_detail():
     sector= info.get("sector","")
     div_y = info.get("dividendYield",0) or 0
 
-    base_pills = f"""
-        <div class="fa-pill" style="background:{C['blue_d']};color:{C['blue']};">MC: ${mc/1e9:.1f}B</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">P/E: {f"{pe:.1f}" if pe else "–"}</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">52W: ${l52:.0f} – ${h52:.0f}</div>
-    """
-    extra_pills = f"""
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">Vol: {vol/1e6:.1f}M</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">EPS: ${f"{eps:.2f}" if eps else "–"}</div>
-        <div class="fa-pill" style="background:{C['green_d']};color:{C['green']};">Div: {div_y*100:.2f}%</div>
-    """
     st.markdown(f"""
         <div class="fa-card" style="border-color:{col}30;margin-bottom:1rem;">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;">
@@ -1726,12 +1755,25 @@ def page_stock_detail():
                     <div class="mono" style="font-size:1.3rem;font-weight:700;color:{col};">{'▲' if chg>=0 else '▼'} {abs(chg):.2f}%  (${abs(cur-prev):.2f})</div>
                 </div>
             </div>
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;">
-                {base_pills}
-                {extra_pills}
-            </div>
         </div>
     """, unsafe_allow_html=True)
+    kpi_cols = st.columns(6)
+    kpis = [
+        ("MC", f"${mc/1e9:.1f}B" if mc else "–"),
+        ("P/E", f"{pe:.1f}" if pe else "–"),
+        ("52W", f"${l52:.0f} – ${h52:.0f}" if h52 and l52 else "–"),
+        ("Vol", f"{vol/1e6:.1f}M" if vol else "–"),
+        ("EPS", f"${eps:.2f}" if eps else "–"),
+        ("Div", f"{div_y*100:.2f}%" if div_y is not None else "–"),
+    ]
+    for i, (lbl, val) in enumerate(kpis):
+        with kpi_cols[i]:
+            st.markdown(f"""
+                <div class="fa-card" style="padding:10px 12px;margin-bottom:10px;">
+                    <div style="font-size:.70rem;color:{C['t3']};text-transform:uppercase;">{lbl}</div>
+                    <div class="mono" style="font-size:1.05rem;font-weight:700;color:{C['t1']};white-space:nowrap;">{val}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
     # Portfolio action buttons
     data = load_data()
@@ -1790,6 +1832,7 @@ def page_stock_detail():
             st.session_state["tf"] = "1Y"
         tf = st.session_state["tf"]
         tf_map = {"1D":("1d","5m"),"5D":("5d","30m"),"1M":("1mo","1d"),"3M":("3mo","1d"),"6M":("6mo","1d"),"1Y":("1y","1d"),"MAX":("max","1wk")}
+        tv_map = {"1D":"5", "5D":"30", "1M":"60", "3M":"240", "6M":"D", "1Y":"D", "MAX":"W"}
         c1,c2,c3,c4,c5,c6,c7,_ = st.columns([1,1,1,1,1,1,1,5])
         for col_obj, label in zip([c1,c2,c3,c4,c5,c6,c7],["1D","5D","1M","3M","6M","1Y","MAX"]):
             with col_obj:
@@ -1798,43 +1841,43 @@ def page_stock_detail():
                     st.rerun()
 
         period, interval = tf_map.get(tf, ("1y","1d"))
-        df_c, _ = fetch_stock(ticker, period=period, interval=interval)
-        if df_c is not None and not df_c.empty:
-            df_c = calc_indicators(df_c)
-            fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                                row_heights=[0.55,0.22,0.23], vertical_spacing=0.02)
-            # Candles
-            fig.add_trace(go.Candlestick(
-                x=df_c.index, open=df_c["Open"], high=df_c["High"],
-                low=df_c["Low"], close=df_c["Close"], name=ticker,
-                increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
-                decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
-            ), row=1, col=1)
-            # SMAs
-            for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
-                if sma in df_c.columns:
-                    fig.add_trace(go.Scatter(x=df_c.index, y=df_c[sma], name=sma,
-                        line=dict(color=color,width=1.2,dash="dot"), opacity=0.8), row=1, col=1)
-            # BB
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Upper"], name="BB",
-                line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Lower"],
-                line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5,
-                fill="tonexty", fillcolor=with_alpha(C["purple"], 0.07), showlegend=False), row=1, col=1)
-            # Volume
-            vcols = [C["green"] if df_c["Close"].iloc[i]>=df_c["Open"].iloc[i] else C["red"] for i in range(len(df_c))]
-            fig.add_trace(go.Bar(x=df_c.index, y=df_c["Volume"], name="Volume",
-                marker_color=vcols, marker_opacity=0.4), row=2, col=1)
-            # RSI
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["RSI"], name="RSI",
-                line=dict(color=C["purple"],width=1.8)), row=3, col=1)
-            fig.add_hline(y=70, line_dash="dash", line_color=C["red"], opacity=0.5, row=3, col=1)
-            fig.add_hline(y=30, line_dash="dash", line_color=C["green"], opacity=0.5, row=3, col=1)
-
-            fig.update_layout(**CHART_LAYOUT, height=620, showlegend=True,
-                legend=dict(orientation="h",y=1.02,x=0,font=dict(size=11),bgcolor="rgba(0,0,0,0)"))
-            fig.update_xaxes(rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
+        src_col1, src_col2 = st.columns([2, 5])
+        with src_col1:
+            chart_source = st.radio("Zdroj grafu", ["TradingView", "Interní"], horizontal=True, key="chart_source")
+        if chart_source == "TradingView":
+            render_tradingview_chart(ticker, info, interval=tv_map.get(tf, "D"), height=700)
+        else:
+            df_c, _ = fetch_stock(ticker, period=period, interval=interval)
+            if df_c is not None and not df_c.empty:
+                df_c = calc_indicators(df_c)
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                                    row_heights=[0.55,0.22,0.23], vertical_spacing=0.02)
+                fig.add_trace(go.Candlestick(
+                    x=df_c.index, open=df_c["Open"], high=df_c["High"],
+                    low=df_c["Low"], close=df_c["Close"], name=ticker,
+                    increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
+                    decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
+                ), row=1, col=1)
+                for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
+                    if sma in df_c.columns:
+                        fig.add_trace(go.Scatter(x=df_c.index, y=df_c[sma], name=sma,
+                            line=dict(color=color,width=1.2,dash="dot"), opacity=0.8), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Upper"], name="BB",
+                    line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Lower"],
+                    line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5,
+                    fill="tonexty", fillcolor=with_alpha(C["purple"], 0.07), showlegend=False), row=1, col=1)
+                vcols = [C["green"] if df_c["Close"].iloc[i]>=df_c["Open"].iloc[i] else C["red"] for i in range(len(df_c))]
+                fig.add_trace(go.Bar(x=df_c.index, y=df_c["Volume"], name="Volume",
+                    marker_color=vcols, marker_opacity=0.4), row=2, col=1)
+                fig.add_trace(go.Scatter(x=df_c.index, y=df_c["RSI"], name="RSI",
+                    line=dict(color=C["purple"],width=1.8)), row=3, col=1)
+                fig.add_hline(y=70, line_dash="dash", line_color=C["red"], opacity=0.5, row=3, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color=C["green"], opacity=0.5, row=3, col=1)
+                fig.update_layout(**CHART_LAYOUT, height=620, showlegend=True,
+                    legend=dict(orientation="h",y=1.02,x=0,font=dict(size=11),bgcolor="rgba(0,0,0,0)"))
+                fig.update_xaxes(rangeslider_visible=False)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
 
     # ── TAB 2: Buy Score ──────────────────
     with tab2:
