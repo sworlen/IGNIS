@@ -3183,20 +3183,22 @@ def _fetch_economic_calendar_cached(from_date: str, to_date: str, countries: lis
 
 def _economic_calendar_placeholder() -> pd.DataFrame:
     rows = [
-        ("08:30", "🇺🇸 US", "●●●", "US Nonfarm Payrolls", "212K", "190K", "176K"),
-        ("08:30", "🇺🇸 US", "●●●", "US Unemployment Rate", "4.1%", "4.2%", "4.2%"),
-        ("10:00", "🇺🇸 US", "●●", "ISM Services PMI", "53.1", "52.5", "52.2"),
-        ("14:00", "🇺🇸 US", "●●●", "FOMC Interest Rate Decision", "5.25%", "5.25%", "5.25%"),
-        ("08:30", "🇪🇺 EU", "●●●", "Eurozone CPI YoY", "2.3%", "2.4%", "2.5%"),
-        ("05:00", "🇪🇺 EU", "●●", "Eurozone GDP QoQ", "0.3%", "0.2%", "0.2%"),
-        ("02:00", "🇬🇧 UK", "●●", "UK CPI YoY", "2.9%", "3.0%", "3.1%"),
-        ("02:00", "🇬🇧 UK", "●", "UK Retail Sales MoM", "0.2%", "-0.1%", "-0.3%"),
-        ("21:30", "🇨🇳 CN", "●●", "China Manufacturing PMI", "50.6", "50.2", "49.9"),
-        ("21:30", "🇨🇳 CN", "●", "China CPI YoY", "0.8%", "0.7%", "0.6%"),
-        ("19:50", "🇯🇵 JP", "●", "Japan Industrial Production MoM", "0.4%", "0.2%", "-0.1%"),
-        ("19:50", "🇯🇵 JP", "●●", "BoJ Core CPI", "2.1%", "2.0%", "2.0%"),
+        ("2026-04-07", "08:30", "🇺🇸 US", "●●●", "US Nonfarm Payrolls", "212K", "190K", "176K"),
+        ("2026-04-07", "08:30", "🇺🇸 US", "●●●", "US Unemployment Rate", "4.1%", "4.2%", "4.2%"),
+        ("2026-04-07", "10:00", "🇺🇸 US", "●●", "ISM Services PMI", "53.1", "52.5", "52.2"),
+        ("2026-04-08", "14:00", "🇺🇸 US", "●●●", "FOMC Interest Rate Decision", "5.25%", "5.25%", "5.25%"),
+        ("2026-04-08", "08:30", "🇪🇺 EU", "●●●", "Eurozone CPI YoY", "2.3%", "2.4%", "2.5%"),
+        ("2026-04-08", "05:00", "🇪🇺 EU", "●●", "Eurozone GDP QoQ", "0.3%", "0.2%", "0.2%"),
+        ("2026-04-09", "02:00", "🇬🇧 UK", "●●", "UK CPI YoY", "2.9%", "3.0%", "3.1%"),
+        ("2026-04-09", "02:00", "🇬🇧 UK", "●", "UK Retail Sales MoM", "0.2%", "-0.1%", "-0.3%"),
+        ("2026-04-10", "21:30", "🇨🇳 CN", "●●", "China Manufacturing PMI", "50.6", "50.2", "49.9"),
+        ("2026-04-10", "21:30", "🇨🇳 CN", "●", "China CPI YoY", "0.8%", "0.7%", "0.6%"),
+        ("2026-04-11", "19:50", "🇯🇵 JP", "●", "Japan Industrial Production MoM", "0.4%", "0.2%", "-0.1%"),
+        ("2026-04-11", "19:50", "🇯🇵 JP", "●●", "BoJ Core CPI", "2.1%", "2.0%", "2.0%"),
     ]
-    ph = pd.DataFrame(rows, columns=["Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous"])
+    ph = pd.DataFrame(rows, columns=["Date", "Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous"])
+    day_map = {"Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun"}
+    ph["Day"] = pd.to_datetime(ph["Date"], errors="coerce").dt.strftime("%a").map(day_map).fillna("N/A")
     a = ph["Actual"].map(_parse_calendar_number)
     f = ph["Forecast"].map(_parse_calendar_number)
     ph["Surprise"] = (a - f).map(lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A")
@@ -3285,6 +3287,7 @@ def economic_calendar_tab():
     else:
         df_cols = {c.lower(): c for c in raw_df.columns}
         col_time = df_cols.get("time", "time") if "time" in df_cols else None
+        col_date = df_cols.get("date", "date") if "date" in df_cols else None
         col_country = df_cols.get("country", "country") if "country" in df_cols else None
         col_importance = df_cols.get("importance", "importance") if "importance" in df_cols else None
         col_event = df_cols.get("event", "event") if "event" in df_cols else None
@@ -3293,6 +3296,13 @@ def economic_calendar_tab():
         col_previous = df_cols.get("previous", "previous") if "previous" in df_cols else None
 
         out = pd.DataFrame()
+        if col_date in raw_df.columns:
+            dt_series = pd.to_datetime(raw_df[col_date], errors="coerce")
+            out["Date"] = dt_series.dt.strftime("%Y-%m-%d").fillna(raw_df[col_date].astype(str))
+            out["Day"] = dt_series.dt.strftime("%a").fillna("N/A")
+        else:
+            out["Date"] = d_from.strftime("%Y-%m-%d")
+            out["Day"] = d_from.strftime("%a")
         out["Time (GMT)"] = raw_df[col_time].astype(str).fillna("N/A") if col_time in raw_df.columns else "N/A"
         if col_country in raw_df.columns:
             out["Country"] = raw_df[col_country].astype(str).str.lower().map(country_flags).fillna(raw_df[col_country].astype(str))
@@ -3321,9 +3331,9 @@ def economic_calendar_tab():
         out["_impact_rank"] = out["Impact"].map(lambda x: 3 if x == "●●●" else 2 if x == "●●" else 1 if x == "●" else 0)
 
     if sort_ui == "Impact":
-        out = out.sort_values(["_impact_rank", "Time (GMT)"], ascending=[False, True])
+        out = out.sort_values(["Date", "_impact_rank", "Time (GMT)"], ascending=[True, False, True])
     else:
-        out = out.sort_values(["Time (GMT)", "_impact_rank"], ascending=[True, False])
+        out = out.sort_values(["Date", "Time (GMT)", "_impact_rank"], ascending=[True, True, False])
 
     def row_style(row):
         if row["Impact"] == "●●●":
@@ -3345,7 +3355,7 @@ def economic_calendar_tab():
         if isinstance(v, str) and v.startswith("-"): return "color:#f43f5e;font-weight:700;"
         return "color:#94a3b8;"
 
-    show_cols = ["Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous", "Surprise"]
+    show_cols = ["Date", "Day", "Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous", "Surprise"]
     styled = out[show_cols].style.apply(row_style, axis=1).applymap(impact_style, subset=["Impact"]).applymap(
         surprise_style, subset=["Surprise"]
     ).set_properties(subset=["Event"], **{"font-weight": "700"})
