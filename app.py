@@ -2600,9 +2600,12 @@ def page_insider():
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
     ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
-    def _to_naive_utc_datetime(s) -> pd.Series:
+    def _to_naive_utc_datetime(s):
         # Handles tz-aware and tz-naive values uniformly (always returns tz-naive UTC).
-        return pd.to_datetime(s, errors="coerce", utc=True).dt.tz_convert(None)
+        dt = pd.to_datetime(s, errors="coerce", utc=True)
+        if isinstance(dt, pd.DatetimeIndex):
+            return dt.tz_convert(None)
+        return dt.dt.tz_convert(None)
 
     def _normalize_earnings_df(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
@@ -2632,17 +2635,20 @@ def page_earnings():
         try:
             edf = s_obj.get_earnings_dates(limit=24)
             payload["earnings_hist"] = _normalize_earnings_df(edf)
-        except Exception:
+        except Exception as e:
+            log_debug(f"get_earnings_dates failed for {t}: {e}")
             try:
                 payload["earnings_hist"] = _normalize_earnings_df(getattr(s_obj, "earnings_dates", None))
-            except Exception:
+            except Exception as e2:
+                log_debug(f"earnings_dates fallback failed for {t}: {e2}")
                 payload["earnings_hist"] = pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
 
         if payload["earnings_hist"].empty:
             try:
                 eh = getattr(s_obj, "earnings_history", None)
                 payload["earnings_hist"] = _normalize_earnings_df(eh)
-            except Exception:
+            except Exception as e3:
+                log_debug(f"earnings_history fallback failed for {t}: {e3}")
                 pass
 
         now_utc = pd.Timestamp.now(tz="UTC").tz_convert(None)
