@@ -4,14 +4,13 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import json
 import os
 import re
 import html
-import concurrent.futures as cf
-from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
 import requests
@@ -3011,68 +3010,66 @@ def page_settings():
 # ─────────────────────────────────────────────
 #  PAGE: EKONOMICKÝ KALENDÁŘ (MAKRO)
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=3600)
-def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
-    """Fetch data from FRED (Federal Reserve Economic Data) – no API key needed for public series."""
+def _macro_series_map() -> dict:
+    """Central mapping: label -> FRED series ID."""
+    return {
+        "CPI YoY (%)": "CPIAUCSL",
+        "Unemployment Rate (%)": "UNRATE",
+        "FED Funds Rate (%)": "FEDFUNDS",
+        "GDP Growth QoQ (%)": "A191RL1Q225SBEA",
+        "10Y Treasury Yield (%)": "DGS10",
+        "Inflation Expectations 10Y (%)": "T10YIEM",
+    }
+
+def _fred_client():
+    """
+    Build FRED client via fredapi + st.secrets key.
+    Returns (client_or_none, error_message_or_none).
+    """
+    api_key = st.secrets.get("FRED_API_KEY", None)
+    if not api_key:
+        return None, "Chybí `FRED_API_KEY` v `st.secrets`."
     try:
-        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=(2.0, 4.0))
-        r.raise_for_status()
-        df = pd.read_csv(StringIO(r.text))
-        if df.empty:
-            return pd.Series(dtype=float)
-
-        date_col = "DATE" if "DATE" in df.columns else df.columns[0]
-        value_cols = [c for c in df.columns if c != date_col]
-        if not value_cols:
-            return pd.Series(dtype=float)
-
-        val_col = value_cols[0]
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df[val_col] = pd.to_numeric(df[val_col].replace(".", np.nan), errors="coerce")
-        df = df.dropna(subset=[date_col, val_col]).set_index(date_col).sort_index()
-        return df[val_col].iloc[-count:]
-    except Exception:
-        return pd.Series(dtype=float)
+        from fredapi import Fred
+        return Fred(api_key=api_key), None
+    except Exception as e:
+        return None, f"Nepodařilo se inicializovat fredapi ({e})."
 
 @st.cache_data(ttl=1800)
+def fetch_fred_series(series_id: str, months: int = 60) -> pd.Series:
+    """Fetch one FRED series via fredapi; returns monthly tail with numeric values."""
+    fred, err = _fred_client()
+    if err or fred is None:
+        return pd.Series(dtype=float)
+    try:
+        s = fred.get_series(series_id)
+        if s is None or len(s) == 0:
+            return pd.Series(dtype=float)
+        s = pd.Series(s).dropna()
+        s.index = pd.to_datetime(s.index)
+        s = pd.to_numeric(s, errors="coerce").dropna()
+        return s.sort_index().iloc[-months:]
+    except Exception as e:
+        log_debug(f"fetch_fred_series({series_id}) failed: {e}")
+        return pd.Series(dtype=float)
+
+@st.cache_data(ttl=900)
 def fetch_macro_snapshot() -> dict:
-    """Pull key macro indicators from FRED quickly (parallel + short timeouts)."""
-    ids = {
-        "CPI (YoY %)":        "CPIAUCSL",
-        "Core CPI (YoY %)":   "CPILFESL",
-        "Unemployment (%)":   "UNRATE",
-        "Fed Funds Rate (%)": "FEDFUNDS",
-        "10Y Treasury (%)":   "DGS10",
-        "2Y Treasury (%)":    "DGS2",
-        "GDP Growth (QoQ %)": "A191RL1Q225SBEA",
-        "PCE Inflation (%)":  "PCEPI",
-        "ISM Manufacturing":  "MANEMP",
-        "Retail Sales (YoY)": "RSAFS",
-        "DXY (USD Index)":    "DTWEXBGS",
-        "VIX":                "VIXCLS",
-    }
-    result = {}
-    with cf.ThreadPoolExecutor(max_workers=6) as ex:
-        futures = {ex.submit(fetch_fred_series, sid, 3): label for label, sid in ids.items()}
-        for fut in cf.as_completed(futures):
-            label = futures[fut]
-            try:
-                s = fut.result(timeout=6)
-                if len(s) >= 2:
-                    cur_val = s.iloc[-1]
-                    prev_val = s.iloc[-2]
-                    result[label] = {
-                        "value": cur_val,
-                        "prev": prev_val,
-                        "change": cur_val - prev_val,
-                        "date": str(s.index[-1].date()),
-                        "series": s,
-                    }
-            except Exception as e:
-                log_debug(f"macro series failed ({label}): {e}")
-    return result
+    """Fetch all key macro indicators used in the macro dashboard."""
+    series_map = _macro_series_map()
+    out = {}
+    for label, sid in series_map.items():
+        s = fetch_fred_series(sid, months=24)
+        if len(s) >= 2:
+            out[label] = {
+                "series_id": sid,
+                "value": float(s.iloc[-1]),
+                "prev": float(s.iloc[-2]),
+                "delta": float(s.iloc[-1] - s.iloc[-2]),
+                "date": str(s.index[-1].date()),
+                "series": s,
+            }
+    return out
 
 @st.cache_data(ttl=3600)
 def compute_sector_macro_corr(period: str = "1y") -> pd.DataFrame:
@@ -3119,180 +3116,128 @@ def compute_sector_macro_corr(period: str = "1y") -> pd.DataFrame:
 
 def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
-    st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Live makro data z FRED (Federal Reserve). Pochopit makro = pochopit, kam půjde trh.</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:.84rem;color:{C['t3']};margin-bottom:1rem;'>"
+        "Makro data jsou načítána přes <b>fredapi</b> z Federal Reserve (FRED)."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs([
-        "📊 Live indikátory",
-        "📈 Grafy trendů",
-        "🎯 Sektor × Makro korelace",
-        "📐 Yield Curve",
-        "📅 Economic Calendar",
-    ])
+    fred_client, fred_error = _fred_client()
+    if fred_error:
+        st.error(
+            "Nepodařilo se inicializovat FRED. "
+            "Přidejte prosím `FRED_API_KEY` do `st.secrets` a restartujte aplikaci."
+        )
+        st.code('''# .streamlit/secrets.toml\nFRED_API_KEY = "YOUR_FRED_API_KEY"''')
+        return
 
-    # ── TAB 1: Live snapshot ──────────────────
+    tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs(
+        ["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor × Makro korelace", "📐 Yield Curve", "📅 Economic Calendar"]
+    )
+
+    # ── TAB 1: Live indikátory ───────────────────────────────
     with tab_live:
-        with st.spinner("Načítám FRED data…"):
+        with st.spinner("Načítám live makro indikátory z FRED…"):
             macro = fetch_macro_snapshot()
         if not macro:
-            st.error("Nepodařilo se načíst makro data z FRED.")
-        else:
-            st.markdown(f"<div style='font-size:.8rem;color:{C['t3']};margin-bottom:1rem;'>Zdroj: Federal Reserve Economic Data (FRED) · St. Louis Fed · Bez API klíče</div>", unsafe_allow_html=True)
-            cols_m = st.columns(4)
-            for i, (label, d) in enumerate(macro.items()):
-                col_m = C["green"] if d["change"] >= 0 else C["red"]
-                icon_m = "▲" if d["change"] >= 0 else "▼"
-                with cols_m[i % 4]:
-                    st.markdown(f"""
-                        <div class="fa-card" style="text-align:center;border-color:{col_m}25;margin-bottom:10px;">
-                            <div style="font-size:.68rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">{label}</div>
-                            <div class="mono" style="font-size:1.5rem;font-weight:800;color:{C['t1']};margin:5px 0;">{d['value']:.2f}</div>
-                            <div style="font-size:.78rem;font-weight:700;color:{col_m};">{icon_m} {abs(d['change']):.2f}</div>
-                            <div style="font-size:.68rem;color:{C['t3']};margin-top:2px;">{d['date']}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            # Yield curve spread (10Y - 2Y)
-            if "10Y Treasury (%)" in macro and "2Y Treasury (%)" in macro:
-                spread = macro["10Y Treasury (%)"]["value"] - macro["2Y Treasury (%)"]["value"]
-                spread_col = C["green"] if spread >= 0 else C["red"]
-                inverted = spread < 0
-                st.markdown(f"""
-                    <div class="fa-card" style="border-color:{spread_col}40;margin-top:8px;">
-                        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-                            <div>
-                                <div style="font-size:.72rem;color:{C['t2']};text-transform:uppercase;">10Y – 2Y Yield Spread (inverze křivky)</div>
-                                <div class="mono" style="font-size:2rem;font-weight:800;color:{spread_col};">{spread:+.2f}%</div>
-                            </div>
-                            <div style="font-size:.83rem;color:{C['t2']};">
-                                {'⚠️ <b style="color:'+C["red"]+';">Inverzní výnosová křivka</b> — historicky předchází recesi o 12–18 měsíců. Každá recese od 1970 byla předcházena inverzí.' if inverted else
-                                 '✅ <b style="color:'+C["green"]+';">Normální výnosová křivka</b> — ekonomika se jeví zdravě. Kladný spread = banky vydělávají na úvěrech.'}
-                            </div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-    # ── TAB 2: Trend charts ───────────────────
-    with tab_charts:
-        chart_choice = st.selectbox("Vyberte indikátor", [
-            "CPI (YoY %)", "Fed Funds Rate (%)", "10Y Treasury (%)", "Unemployment (%)",
-            "GDP Growth (QoQ %)", "DXY (USD Index)", "VIX"
-        ])
-        fred_map = {
-            "CPI (YoY %)":        "CPIAUCSL",
-            "Fed Funds Rate (%)": "FEDFUNDS",
-            "10Y Treasury (%)":   "DGS10",
-            "Unemployment (%)":   "UNRATE",
-            "GDP Growth (QoQ %)": "A191RL1Q225SBEA",
-            "DXY (USD Index)":    "DTWEXBGS",
-            "VIX":                "VIXCLS",
-        }
-        n_pts = st.slider("Počet datových bodů", 12, 120, 48)
-        with st.spinner(f"Načítám {chart_choice}…"):
-            s = fetch_fred_series(fred_map[chart_choice], n_pts)
-        if s.empty:
-            st.warning("Data nedostupná.")
-        else:
-            # Overlay S&P 500 for context
-            show_sp = st.checkbox("Překrýt S&P 500 (normalizovaný)", value=True)
-            mc_fig = make_subplots(specs=[[{"secondary_y": True}]])
-            mc_fig.add_trace(go.Scatter(
-                x=s.index, y=s.values, name=chart_choice,
-                line=dict(color=C["blue"], width=2.2),
-                fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.09),
-            ), secondary_y=False)
-            if show_sp:
-                try:
-                    sp = yf.Ticker("^GSPC").history(period="10y")["Close"].resample("MS").last()
-                    sp = sp[sp.index >= s.index[0]]
-                    mc_fig.add_trace(go.Scatter(
-                        x=sp.index, y=sp.values, name="S&P 500",
-                        line=dict(color=C["t3"], width=1.5, dash="dash"), opacity=.6,
-                    ), secondary_y=True)
-                except Exception:
-                    pass
-            mc_fig.update_layout(**CHART_LAYOUT, height=380, showlegend=True,
-                legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"))
-            mc_fig.update_yaxes(title_text=chart_choice, secondary_y=False,
-                                tickfont=dict(color=C["t2"]))
-            mc_fig.update_yaxes(title_text="S&P 500", secondary_y=True,
-                                tickfont=dict(color=C["t3"]), showgrid=False)
-            st.plotly_chart(mc_fig, use_container_width=True, config={"displayModeBar": False})
-
-    # ── TAB 3: Sector x Macro Correlation Matrix ───────────
-    with tab_matrix:
-        st.caption("Korelace denních výnosů sektorových ETF proti hlavním makro faktorům (reálná data, nikoli statické odhady).")
-        corr_period = st.selectbox("Období korelací", ["6mo", "1y", "2y", "5y"], index=1, key="macro_corr_period")
-        corr = compute_sector_macro_corr(corr_period)
-        if corr.empty:
-            st.info("Korelační data nejsou momentálně dostupná.")
-        else:
-            z_vals = corr.values
-            text_vals = [[f"{v:+.2f}" for v in row] for row in z_vals]
-            heat_fig = go.Figure(go.Heatmap(
-                z=z_vals, x=list(corr.columns), y=list(corr.index),
-                text=text_vals, texttemplate="%{text}",
-                colorscale="RdBu",
-                zmin=-1, zmax=1,
-                showscale=True,
-                colorbar=dict(tickfont=dict(color=C["t2"]),
-                              title=dict(text="Korelace", font=dict(color=C["t2"]))),
-            ))
-            heat_fig.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                height=420, margin=dict(l=10, r=10, t=10, b=10),
-                font=dict(color=C["t1"]),
-                xaxis=dict(tickfont=dict(color=C["t2"])),
-                yaxis=dict(tickfont=dict(color=C["t2"]), autorange="reversed"),
+            st.warning(
+                "Nepodařilo se načíst makro data z FRED. "
+                "Zkontrolujte API key (`st.secrets['FRED_API_KEY']`) nebo síťové připojení."
             )
-            st.plotly_chart(heat_fig, use_container_width=True, config={"displayModeBar": False})
-            st.caption("Korelace ≠ kauzalita. V režimu risk-off se vztahy mohou rychle měnit.")
-
-    # ── TAB 4: Yield Curve ────────────────────
-    with tab_yield:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Výnosová křivka US Treasuries. Inverze (krátké výnosy > dlouhé) = jeden z nejspolehlivějších prediktorů recese.</div>", unsafe_allow_html=True)
-        maturities = {"3M": "DGS3MO", "1Y": "DGS1", "2Y": "DGS2", "5Y": "DGS5", "7Y": "DGS7", "10Y": "DGS10", "20Y": "DGS20", "30Y": "DGS30"}
-        with st.spinner("Načítám výnosovou křivku…"):
-            yields = {}
-            for mat, sid in maturities.items():
-                s = fetch_fred_series(sid, 2)
-                if len(s) >= 1:
-                    yields[mat] = s.iloc[-1]
-        if yields:
-            labels = list(yields.keys())
-            values = list(yields.values())
-            min_v  = min(values)
-            yc_col = C["red"] if values[0] > values[-1] else C["green"]
-            yc_fig = go.Figure()
-            yc_fig.add_trace(go.Scatter(
-                x=labels, y=values, mode="lines+markers",
-                line=dict(color=yc_col, width=2.5),
-                marker=dict(size=9, color=yc_col),
-                fill="tozeroy", fillcolor=with_alpha(yc_col, 0.09),
-            ))
-            yc_fig.add_hline(y=0, line_color=C["border"])
-            yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False)
-            yc_fig.update_yaxes(ticksuffix="%")
-            st.plotly_chart(yc_fig, use_container_width=True, config={"displayModeBar": False})
-
-            # Spread table
-            st.markdown(f"<div style='font-weight:600;color:{C['t2']};margin:8px 0 6px;'>Klíčové spready</div>", unsafe_allow_html=True)
-            spreads_list = [
-                ("10Y – 2Y", yields.get("10Y", 0) - yields.get("2Y", 0)),
-                ("10Y – 3M", yields.get("10Y", 0) - yields.get("3M", 0)),
-                ("30Y – 10Y", yields.get("30Y", 0) - yields.get("10Y", 0)),
-                ("5Y – 2Y", yields.get("5Y", 0) - yields.get("2Y", 0)),
+        else:
+            key_order = [
+                "CPI YoY (%)",
+                "Unemployment Rate (%)",
+                "FED Funds Rate (%)",
+                "GDP Growth QoQ (%)",
+                "10Y Treasury Yield (%)",
+                "Inflation Expectations 10Y (%)",
             ]
-            sp_cols = st.columns(4)
-            for i, (lbl, val) in enumerate(spreads_list):
-                with sp_cols[i]:
-                    sp_c = C["green"] if val >= 0 else C["red"]
-                    st.markdown(f"""
-                        <div class="fa-card" style="text-align:center;border-color:{sp_c}30;">
-                            <div style="font-size:.7rem;color:{C['t2']};">{lbl}</div>
-                            <div class="mono" style="font-size:1.3rem;font-weight:800;color:{sp_c};">{val:+.2f}%</div>
-                            <div style="font-size:.7rem;color:{C['t3']};margin-top:2px;">{'Inverzní ⚠️' if val<0 else 'Normální ✅'}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            cols = st.columns(3)
+            for i, label in enumerate(key_order):
+                d = macro.get(label)
+                with cols[i % 3]:
+                    if d:
+                        st.metric(label, f"{d['value']:.2f}", f"{d['delta']:+.2f}")
+                        st.caption(f"Poslední update: {d['date']}")
+                    else:
+                        st.metric(label, "N/A", "N/A")
+                        st.caption("Data nedostupná")
+
+    # ── TAB 2: Grafy trendů ──────────────────────────────────
+    with tab_charts:
+        series_map = _macro_series_map()
+        indicator = st.selectbox("Vyber indikátor", list(series_map.keys()), key="macro_indicator_select")
+        months = st.slider("Počet měsíců", 12, 120, 60, key="macro_months_slider")
+
+        with st.spinner(f"Načítám trend: {indicator}…"):
+            s = fetch_fred_series(series_map[indicator], months=months)
+
+        if s.empty:
+            st.warning("Data nedostupná pro vybraný indikátor.")
+        else:
+            df_plot = pd.DataFrame({"Date": s.index, "Value": s.values})
+            fig = px.line(df_plot, x="Date", y="Value", title=indicator, template="plotly_dark")
+            fig.update_layout(**CHART_LAYOUT, height=420)
+            fig.update_traces(line=dict(width=2.5, color=C["blue"]))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ── TAB 3: Sektor × Makro korelace (placeholder) ─────────
+    with tab_matrix:
+        st.info(
+            "Pro reálnou matici korelací potřebujeme propojit výnosy sektorových ETF "
+            "(např. XLK, XLF, XLE…) z yfinance s makro sériemi z FRED."
+        )
+        placeholder_df = pd.DataFrame(
+            {
+                "Sektor": ["Tech", "Finance", "Energy", "Healthcare"],
+                "Korelace s CPI": [0.22, -0.08, 0.31, 0.05],
+                "Korelace s 10Y výnosem": [-0.41, 0.27, 0.19, -0.11],
+            }
+        )
+        st.dataframe(placeholder_df, use_container_width=True, hide_index=True)
+
+    # ── TAB 4: Yield Curve ───────────────────────────────────
+    with tab_yield:
+        with st.spinner("Načítám Yield Curve data z FRED…"):
+            yc_map = {
+                "3M": "DGS3MO",
+                "2Y": "DGS2",
+                "5Y": "DGS5",
+                "10Y": "DGS10",
+                "30Y": "DGS30",
+            }
+            yc_data = {k: fetch_fred_series(v, months=24) for k, v in yc_map.items()}
+
+        if not yc_data or yc_data["10Y"].empty or yc_data["2Y"].empty:
+            st.warning("Yield Curve data nejsou dostupná.")
+        else:
+            latest_curve = pd.DataFrame(
+                {
+                    "Maturity": list(yc_map.keys()),
+                    "Yield": [yc_data[k].iloc[-1] if len(yc_data[k]) else np.nan for k in yc_map.keys()],
+                }
+            ).dropna()
+            fig_curve = px.line(
+                latest_curve,
+                x="Maturity",
+                y="Yield",
+                markers=True,
+                title="US Treasury Yield Curve (latest)",
+                template="plotly_dark",
+            )
+            fig_curve.update_layout(**CHART_LAYOUT, height=380)
+            fig_curve.update_traces(line=dict(width=3, color=C["blue"]))
+            st.plotly_chart(fig_curve, use_container_width=True, config={"displayModeBar": False})
+
+            spread = float(yc_data["10Y"].iloc[-1] - yc_data["2Y"].iloc[-1])
+            prev_spread = float(yc_data["10Y"].iloc[-2] - yc_data["2Y"].iloc[-2]) if len(yc_data["10Y"]) > 1 and len(yc_data["2Y"]) > 1 else spread
+            st.metric("10Y - 2Y Spread", f"{spread:+.2f}%", f"{(spread - prev_spread):+.2f}")
+
+    # ── TAB 5: Economic Calendar (placeholder) ───────────────
+    with tab_calendar:
+        st.info("Economic Calendar bude načítán přes Finnhub nebo Trading Economics API (v další iteraci).")
 
     # ── TAB 5: Investing.com Economic Calendar ─────────────
     with tab_calendar:
