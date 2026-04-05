@@ -928,9 +928,6 @@ CHART_LAYOUT = dict(
     font=dict(color=C["t1"], family="Inter"),
     margin=dict(l=8, r=8, t=26, b=8),
     hovermode="x unified",
-    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"], tickfont=dict(color=C["t2"])),
-    yaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"],
-               tickfont=dict(color=C["t2"])),
     hoverlabel=dict(
         bgcolor="rgba(15,23,42,0.92)",
         bordercolor=C["border2"],
@@ -1184,14 +1181,17 @@ def to_tradingview_symbol(ticker: str, info: dict = None) -> str:
 
 def render_tradingview_chart(ticker: str, info: dict = None, interval: str = "D", height: int = 640):
     tv_symbol = to_tradingview_symbol(ticker, info)
+    tv_height = max(520, int(height) - 24)
     widget = f"""
     <div class="tradingview-widget-container">
-      <div id="tradingview_chart"></div>
+      <div id="tradingview_chart" style="height:{tv_height}px;"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
       new TradingView.widget({{
         "container_id": "tradingview_chart",
-        "autosize": true,
+        "autosize": false,
+        "width": "100%",
+        "height": {tv_height},
         "symbol": "{tv_symbol}",
         "interval": "{interval}",
         "timezone": "Etc/UTC",
