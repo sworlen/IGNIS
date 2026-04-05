@@ -1163,6 +1163,306 @@ def mini_sparkline(values, color, height=55):
     return fig
 
 # ─────────────────────────────────────────────
+#  ADVANCED FINANCE TOOLKIT (v13)
+# ─────────────────────────────────────────────
+def adv_safe_div(a, b, default=np.nan):
+    try:
+        if b is None or float(b) == 0:
+            return default
+        return float(a) / float(b)
+    except Exception:
+        return default
+
+def adv_cagr(start_value: float, end_value: float, years: float) -> float:
+    if start_value <= 0 or end_value <= 0 or years <= 0:
+        return np.nan
+    return (end_value / start_value) ** (1 / years) - 1
+
+def adv_annualize_return(period_returns: pd.Series, periods_per_year: int = 252) -> float:
+    r = pd.Series(period_returns).dropna()
+    if r.empty:
+        return np.nan
+    compounded = (1 + r).prod()
+    years = len(r) / periods_per_year
+    return compounded ** (1 / years) - 1 if years > 0 else np.nan
+
+def adv_annualize_vol(period_returns: pd.Series, periods_per_year: int = 252) -> float:
+    r = pd.Series(period_returns).dropna()
+    return r.std() * np.sqrt(periods_per_year) if not r.empty else np.nan
+
+def adv_sharpe_ratio(period_returns: pd.Series, rf_annual: float = 0.02, periods_per_year: int = 252) -> float:
+    ann_ret = adv_annualize_return(period_returns, periods_per_year)
+    ann_vol = adv_annualize_vol(period_returns, periods_per_year)
+    return adv_safe_div(ann_ret - rf_annual, ann_vol)
+
+def adv_sortino_ratio(period_returns: pd.Series, rf_annual: float = 0.02, periods_per_year: int = 252) -> float:
+    r = pd.Series(period_returns).dropna()
+    if r.empty:
+        return np.nan
+    downside = r[r < 0].std() * np.sqrt(periods_per_year)
+    ann_ret = adv_annualize_return(r, periods_per_year)
+    return adv_safe_div(ann_ret - rf_annual, downside)
+
+def adv_max_drawdown(price_series: pd.Series) -> float:
+    p = pd.Series(price_series).dropna()
+    if p.empty:
+        return np.nan
+    cummax = p.cummax()
+    dd = p / cummax - 1
+    return float(dd.min())
+
+def adv_calmar_ratio(price_series: pd.Series, periods_per_year: int = 252) -> float:
+    p = pd.Series(price_series).dropna()
+    if len(p) < 3:
+        return np.nan
+    rets = p.pct_change().dropna()
+    ann_ret = adv_annualize_return(rets, periods_per_year)
+    mdd = abs(adv_max_drawdown(p))
+    return adv_safe_div(ann_ret, mdd)
+
+def adv_var_parametric(period_returns: pd.Series, confidence: float = 0.95) -> float:
+    r = pd.Series(period_returns).dropna()
+    if r.empty:
+        return np.nan
+    z = {0.90: 1.2816, 0.95: 1.6449, 0.99: 2.3263}.get(round(confidence, 2), 1.6449)
+    return -(r.mean() - z * r.std())
+
+def adv_cvar_parametric(period_returns: pd.Series, confidence: float = 0.95) -> float:
+    r = pd.Series(period_returns).dropna()
+    if r.empty:
+        return np.nan
+    var = -np.quantile(r, 1 - confidence)
+    tail = r[r <= -var]
+    return -tail.mean() if not tail.empty else var
+
+def adv_beta_alpha(asset_returns: pd.Series, benchmark_returns: pd.Series, rf_period: float = 0.0) -> tuple:
+    df = pd.concat([asset_returns, benchmark_returns], axis=1).dropna()
+    if len(df) < 10:
+        return np.nan, np.nan
+    x = df.iloc[:, 1] - rf_period
+    y = df.iloc[:, 0] - rf_period
+    beta = np.cov(y, x)[0, 1] / np.var(x) if np.var(x) > 0 else np.nan
+    alpha = y.mean() - beta * x.mean() if beta == beta else np.nan
+    return beta, alpha
+
+def adv_rolling_beta(asset_returns: pd.Series, benchmark_returns: pd.Series, window: int = 60) -> pd.Series:
+    df = pd.concat([asset_returns, benchmark_returns], axis=1).dropna()
+    if len(df) < window:
+        return pd.Series(dtype=float)
+    out = []
+    idx = []
+    for i in range(window, len(df) + 1):
+        chunk = df.iloc[i - window:i]
+        beta, _ = adv_beta_alpha(chunk.iloc[:, 0], chunk.iloc[:, 1])
+        out.append(beta)
+        idx.append(chunk.index[-1])
+    return pd.Series(out, index=idx)
+
+def adv_correlation_matrix(returns_df: pd.DataFrame) -> pd.DataFrame:
+    df = pd.DataFrame(returns_df).dropna(how='all')
+    return df.corr() if not df.empty else pd.DataFrame()
+
+def adv_cov_matrix(returns_df: pd.DataFrame, annualize: bool = True, periods_per_year: int = 252) -> pd.DataFrame:
+    df = pd.DataFrame(returns_df).dropna(how='all')
+    if df.empty:
+        return pd.DataFrame()
+    cov = df.cov()
+    return cov * periods_per_year if annualize else cov
+
+def adv_portfolio_return(weights: np.ndarray, expected_returns: np.ndarray) -> float:
+    w = np.array(weights, dtype=float)
+    er = np.array(expected_returns, dtype=float)
+    return float(np.dot(w, er))
+
+def adv_portfolio_volatility(weights: np.ndarray, cov_matrix: np.ndarray) -> float:
+    w = np.array(weights, dtype=float)
+    c = np.array(cov_matrix, dtype=float)
+    return float(np.sqrt(np.dot(w.T, np.dot(c, w))))
+
+def adv_portfolio_sharpe(weights: np.ndarray, expected_returns: np.ndarray, cov_matrix: np.ndarray, rf: float = 0.02) -> float:
+    pret = adv_portfolio_return(weights, expected_returns)
+    pvol = adv_portfolio_volatility(weights, cov_matrix)
+    return adv_safe_div(pret - rf, pvol)
+
+def adv_min_variance_weights(cov_matrix: np.ndarray) -> np.ndarray:
+    c = np.array(cov_matrix, dtype=float)
+    n = c.shape[0]
+    inv = np.linalg.pinv(c)
+    ones = np.ones(n)
+    w = inv @ ones / (ones.T @ inv @ ones)
+    return w
+
+def adv_risk_parity_weights(cov_matrix: np.ndarray, iterations: int = 200, lr: float = 0.01) -> np.ndarray:
+    c = np.array(cov_matrix, dtype=float)
+    n = c.shape[0]
+    w = np.ones(n) / n
+    for _ in range(iterations):
+        port_vol = np.sqrt(w.T @ c @ w)
+        mrc = c @ w / (port_vol + 1e-12)
+        rc = w * mrc
+        target = np.ones(n) * (port_vol / n)
+        grad = rc - target
+        w = np.clip(w - lr * grad, 1e-6, None)
+        w = w / w.sum()
+    return w
+
+def adv_capm_expected_return(rf: float, beta: float, market_return: float) -> float:
+    return rf + beta * (market_return - rf)
+
+def adv_wacc(market_cap: float, debt: float, cost_of_equity: float, cost_of_debt: float, tax_rate: float = 0.21) -> float:
+    total = market_cap + debt
+    if total <= 0:
+        return np.nan
+    we = market_cap / total
+    wd = debt / total
+    return we * cost_of_equity + wd * cost_of_debt * (1 - tax_rate)
+
+def adv_terminal_value_gordon(last_fcf: float, g: float, wacc: float) -> float:
+    if wacc <= g:
+        return np.nan
+    return last_fcf * (1 + g) / (wacc - g)
+
+def adv_terminal_value_exit_multiple(metric_value: float, multiple: float) -> float:
+    return metric_value * multiple
+
+def adv_discount_cashflows(cashflows: list, discount_rate: float) -> list:
+    out = []
+    for i, cf in enumerate(cashflows, 1):
+        out.append(cf / ((1 + discount_rate) ** i))
+    return out
+
+def adv_dcf_enterprise_value(fcff_projection: list, terminal_value: float, discount_rate: float) -> float:
+    pv = sum(adv_discount_cashflows(fcff_projection, discount_rate))
+    tv_pv = terminal_value / ((1 + discount_rate) ** len(fcff_projection))
+    return pv + tv_pv
+
+def adv_dcf_equity_value(enterprise_value: float, cash: float, debt: float, minority_interest: float = 0.0) -> float:
+    return enterprise_value + cash - debt - minority_interest
+
+def adv_fcff_from_statements(ebit: float, tax_rate: float, da: float, capex: float, nwc_change: float) -> float:
+    nopat = ebit * (1 - tax_rate)
+    return nopat + da - capex - nwc_change
+
+def adv_fcfe_from_statements(net_income: float, da: float, capex: float, nwc_change: float, net_borrowing: float) -> float:
+    return net_income + da - capex - nwc_change + net_borrowing
+
+def adv_intrinsic_value_per_share(equity_value: float, shares_outstanding: float) -> float:
+    return adv_safe_div(equity_value, shares_outstanding)
+
+def adv_margin_of_safety(intrinsic_value: float, market_price: float) -> float:
+    if market_price <= 0:
+        return np.nan
+    return (intrinsic_value - market_price) / market_price
+
+def adv_ev_ebitda_multiple(ebitda: float, peer_multiple: float, cash: float, debt: float, shares: float) -> float:
+    ev = ebitda * peer_multiple
+    eq = ev + cash - debt
+    return adv_intrinsic_value_per_share(eq, shares)
+
+def adv_pe_multiple_value(eps: float, target_pe: float) -> float:
+    return eps * target_pe
+
+def adv_residual_income_value(book_value: float, residual_incomes: list, cost_of_equity: float) -> float:
+    pv_ri = sum(ri / ((1 + cost_of_equity) ** i) for i, ri in enumerate(residual_incomes, 1))
+    return book_value + pv_ri
+
+def adv_dividend_discount_model(dividend_next: float, cost_of_equity: float, growth: float) -> float:
+    if cost_of_equity <= growth:
+        return np.nan
+    return dividend_next / (cost_of_equity - growth)
+
+def adv_piotroski_proxy_score(roa: float, cfo: float, leverage_delta: float, current_ratio_delta: float, gross_margin_delta: float, asset_turnover_delta: float) -> int:
+    tests = [roa > 0, cfo > 0, cfo > roa, leverage_delta < 0, current_ratio_delta > 0, gross_margin_delta > 0, asset_turnover_delta > 0]
+    return int(sum(tests))
+
+def adv_altman_z_score(working_capital: float, retained_earnings: float, ebit: float, market_value_equity: float, total_liabilities: float, sales: float, total_assets: float) -> float:
+    if total_assets <= 0 or total_liabilities <= 0:
+        return np.nan
+    x1 = working_capital / total_assets
+    x2 = retained_earnings / total_assets
+    x3 = ebit / total_assets
+    x4 = market_value_equity / total_liabilities
+    x5 = sales / total_assets
+    return 1.2*x1 + 1.4*x2 + 3.3*x3 + 0.6*x4 + 1.0*x5
+
+def adv_beneish_m_score(dsri: float, gmi: float, aqi: float, sgi: float, depi: float, sgai: float, lvgi: float, tata: float) -> float:
+    return (-4.84 + 0.92*dsri + 0.528*gmi + 0.404*aqi + 0.892*sgi + 0.115*depi - 0.172*sgai + 4.679*tata - 0.327*lvgi)
+
+def adv_interest_coverage_ratio(ebit: float, interest_expense: float) -> float:
+    return adv_safe_div(ebit, interest_expense)
+
+def adv_debt_service_coverage(operating_income: float, debt_service: float) -> float:
+    return adv_safe_div(operating_income, debt_service)
+
+def adv_working_capital_cycle(dso: float, dio: float, dpo: float) -> float:
+    return dso + dio - dpo
+
+def adv_revenue_growth_series(revenue_series: pd.Series) -> pd.Series:
+    s = pd.Series(revenue_series).dropna()
+    return s.pct_change()
+
+def adv_earnings_quality_ratio(cfo: float, net_income: float) -> float:
+    return adv_safe_div(cfo, net_income)
+
+def adv_f_score_trend(scores: list) -> float:
+    if len(scores) < 2:
+        return np.nan
+    x = np.arange(len(scores))
+    y = np.array(scores, dtype=float)
+    slope = np.polyfit(x, y, 1)[0]
+    return float(slope)
+
+def adv_monte_carlo_gbm(start_price: float, mu: float, sigma: float, days: int = 252, sims: int = 1000) -> np.ndarray:
+    dt = 1 / 252
+    shocks = np.random.normal((mu - 0.5 * sigma**2) * dt, sigma * np.sqrt(dt), size=(days, sims))
+    paths = np.zeros((days + 1, sims))
+    paths[0] = start_price
+    for t in range(1, days + 1):
+        paths[t] = paths[t-1] * np.exp(shocks[t-1])
+    return paths
+
+def adv_bootstrap_var(returns: pd.Series, horizon_days: int = 10, confidence: float = 0.95, sims: int = 5000) -> float:
+    r = pd.Series(returns).dropna().values
+    if len(r) < 20:
+        return np.nan
+    sim = np.random.choice(r, size=(sims, horizon_days), replace=True)
+    cum = (1 + sim).prod(axis=1) - 1
+    return -np.quantile(cum, 1 - confidence)
+
+def adv_kelly_fraction(win_rate: float, win_loss_ratio: float) -> float:
+    if win_loss_ratio <= 0:
+        return 0.0
+    k = win_rate - (1 - win_rate) / win_loss_ratio
+    return float(max(0.0, min(k, 1.0)))
+
+def adv_position_size_by_risk(account_size: float, risk_per_trade: float, stop_loss_pct: float) -> float:
+    capital_at_risk = account_size * risk_per_trade
+    return adv_safe_div(capital_at_risk, stop_loss_pct)
+
+def adv_atr_position_size(account_size: float, risk_per_trade: float, atr: float, atr_multiple: float = 2.0) -> float:
+    dollar_risk = account_size * risk_per_trade
+    stop_distance = atr * atr_multiple
+    return adv_safe_div(dollar_risk, stop_distance)
+
+def adv_regime_score(vix_level: float, breadth_pct: float, credit_spread: float, yield_curve_spread: float) -> float:
+    score = 0
+    score += 25 if vix_level < 20 else 10 if vix_level < 28 else 0
+    score += 25 if breadth_pct > 55 else 10 if breadth_pct > 45 else 0
+    score += 25 if credit_spread < 2.0 else 10 if credit_spread < 3.5 else 0
+    score += 25 if yield_curve_spread > 0 else 10 if yield_curve_spread > -0.5 else 0
+    return float(score)
+
+def adv_signal_blend_score(valuation_score: float, quality_score: float, momentum_score: float, risk_score: float,
+                           w_val: float = 0.30, w_qlt: float = 0.25, w_mom: float = 0.25, w_risk: float = 0.20) -> float:
+    parts = np.array([valuation_score, quality_score, momentum_score, risk_score], dtype=float)
+    weights = np.array([w_val, w_qlt, w_mom, w_risk], dtype=float)
+    if np.isnan(parts).any() or weights.sum() <= 0:
+        return np.nan
+    weights = weights / weights.sum()
+    return float(np.dot(parts, weights))
+
+
+# ─────────────────────────────────────────────
 #  NAV / HEADER
 # ─────────────────────────────────────────────
 PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Options", "Dividendy", "Sektor Mapa", "Settings"]
