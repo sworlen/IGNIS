@@ -3026,9 +3026,17 @@ def _fred_client():
     Build FRED client via fredapi + st.secrets key.
     Returns (client_or_none, error_message_or_none).
     """
-    api_key = st.secrets.get("FRED_API_KEY", None)
+    api_key = None
+    try:
+        # Access guarded: st.secrets can raise StreamlitSecretNotFoundError
+        if "FRED_API_KEY" in st.secrets:
+            api_key = st.secrets["FRED_API_KEY"]
+    except Exception:
+        api_key = None
     if not api_key:
-        return None, "Chybí `FRED_API_KEY` v `st.secrets`."
+        api_key = os.getenv("FRED_API_KEY", None)
+    if not api_key:
+        return None, "Chybí `FRED_API_KEY` v `st.secrets` (nebo v proměnné prostředí `FRED_API_KEY`)."
     try:
         from fredapi import Fred
         return Fred(api_key=api_key), None
@@ -3238,23 +3246,6 @@ def page_makro():
     # ── TAB 5: Economic Calendar (placeholder) ───────────────
     with tab_calendar:
         st.info("Economic Calendar bude načítán přes Finnhub nebo Trading Economics API (v další iteraci).")
-
-    # ── TAB 5: Investing.com Economic Calendar ─────────────
-    with tab_calendar:
-        st.caption("Události z Investing.com ekonomického kalendáře (USA).")
-        st.markdown("[Otevřít plný kalendář](https://www.investing.com/economic-calendar/)")
-        components.html(
-            '''
-            <iframe
-                src="https://sslecal2.forexprostools.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=1,2,3&features=datepicker,timezone,timeselector,filters&countries=5&calType=day&timeZone=55&lang=1"
-                width="100%"
-                height="690"
-                frameborder="0"
-                style="border:1px solid rgba(148,163,184,0.25);border-radius:12px;background:#0f172a;">
-            </iframe>
-            ''',
-            height=710,
-        )
 
 
 # ─────────────────────────────────────────────
