@@ -3161,7 +3161,7 @@ def _impact_rank(impact_txt: str) -> int:
         return 1
     return 0
 
-@st.cache_data(ttl=1200)
+@st.cache_data(ttl=1800)
 def _fetch_economic_calendar_cached(from_date: str, to_date: str, countries: list, importances: list) -> pd.DataFrame:
     """
     Cached fetch wrapper for investpy economic calendar.
@@ -3181,93 +3181,86 @@ def _fetch_economic_calendar_cached(from_date: str, to_date: str, countries: lis
     except Exception:
         return pd.DataFrame()
 
-def economic_calendar_tab():
-    """High-quality free Economic Calendar tab using investpy."""
-    st.markdown("<h3 class='grad' style='margin:0 0 .6rem;'>📅 Economic Calendar</h3>", unsafe_allow_html=True)
-    gmt_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    st.caption(f"Current Time: {gmt_now} GMT")
+def _economic_calendar_placeholder() -> pd.DataFrame:
+    rows = [
+        ("08:30", "🇺🇸 US", "●●●", "US Nonfarm Payrolls", "212K", "190K", "176K"),
+        ("08:30", "🇺🇸 US", "●●●", "US Unemployment Rate", "4.1%", "4.2%", "4.2%"),
+        ("10:00", "🇺🇸 US", "●●", "ISM Services PMI", "53.1", "52.5", "52.2"),
+        ("14:00", "🇺🇸 US", "●●●", "FOMC Interest Rate Decision", "5.25%", "5.25%", "5.25%"),
+        ("08:30", "🇪🇺 EU", "●●●", "Eurozone CPI YoY", "2.3%", "2.4%", "2.5%"),
+        ("05:00", "🇪🇺 EU", "●●", "Eurozone GDP QoQ", "0.3%", "0.2%", "0.2%"),
+        ("02:00", "🇬🇧 UK", "●●", "UK CPI YoY", "2.9%", "3.0%", "3.1%"),
+        ("02:00", "🇬🇧 UK", "●", "UK Retail Sales MoM", "0.2%", "-0.1%", "-0.3%"),
+        ("21:30", "🇨🇳 CN", "●●", "China Manufacturing PMI", "50.6", "50.2", "49.9"),
+        ("21:30", "🇨🇳 CN", "●", "China CPI YoY", "0.8%", "0.7%", "0.6%"),
+        ("19:50", "🇯🇵 JP", "●", "Japan Industrial Production MoM", "0.4%", "0.2%", "-0.1%"),
+        ("19:50", "🇯🇵 JP", "●●", "BoJ Core CPI", "2.1%", "2.0%", "2.0%"),
+    ]
+    ph = pd.DataFrame(rows, columns=["Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous"])
+    a = ph["Actual"].map(_parse_calendar_number)
+    f = ph["Forecast"].map(_parse_calendar_number)
+    ph["Surprise"] = (a - f).map(lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A")
+    ph["_impact_rank"] = ph["Impact"].map(lambda x: 3 if x == "●●●" else 2 if x == "●●" else 1)
+    return ph
 
-    # Quick ranges
+def economic_calendar_tab():
+    """Peak quality free Economic Calendar tab using investpy + styled fallback."""
+    st.markdown("<h3 class='grad' style='margin:0 0 .6rem;'>📅 Economic Calendar</h3>", unsafe_allow_html=True)
+    st.caption(f"Current Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} GMT")
+
+    # Quick range filters
     q1, q2, q3, q4, q5 = st.columns(5)
     quick = None
     with q1:
-        if st.button("Yesterday", use_container_width=True, key="ec_yesterday"):
-            quick = "yesterday"
+        if st.button("Yesterday", use_container_width=True, key="ec_yesterday"): quick = "yesterday"
     with q2:
-        if st.button("Today", use_container_width=True, key="ec_today"):
-            quick = "today"
+        if st.button("Today", use_container_width=True, key="ec_today"): quick = "today"
     with q3:
-        if st.button("Tomorrow", use_container_width=True, key="ec_tomorrow"):
-            quick = "tomorrow"
+        if st.button("Tomorrow", use_container_width=True, key="ec_tomorrow"): quick = "tomorrow"
     with q4:
-        if st.button("This Week", use_container_width=True, key="ec_week"):
-            quick = "week"
+        if st.button("This Week", use_container_width=True, key="ec_week"): quick = "week"
     with q5:
-        if st.button("This Month", use_container_width=True, key="ec_month"):
-            quick = "month"
+        if st.button("This Month", use_container_width=True, key="ec_month"): quick = "month"
 
     today = datetime.utcnow().date()
-    default_from = today
-    default_to = today + timedelta(days=1)
+    default_from, default_to = today, today + timedelta(days=7)
     if quick == "yesterday":
-        default_from = today - timedelta(days=1)
-        default_to = today - timedelta(days=1)
+        default_from = default_to = today - timedelta(days=1)
     elif quick == "today":
-        default_from = today
-        default_to = today
+        default_from = default_to = today
     elif quick == "tomorrow":
-        default_from = today + timedelta(days=1)
-        default_to = today + timedelta(days=1)
+        default_from = default_to = today + timedelta(days=1)
     elif quick == "week":
-        default_from = today
-        default_to = today + timedelta(days=6)
+        default_from, default_to = today, today + timedelta(days=6)
     elif quick == "month":
-        default_from = today
-        default_to = today + timedelta(days=30)
+        default_from, default_to = today, today + timedelta(days=30)
 
-    # Filters
-    f1, f2, f3, f4 = st.columns([2, 1.2, 1.2, 1.2])
+    f1, f2, f3, f4 = st.columns([2, 1.3, 1.2, 1.2])
     with f1:
-        date_range = st.date_input(
-            "Date range",
-            value=(default_from, default_to),
-            key="ec_date_range",
-        )
+        date_range = st.date_input("Date range", value=(default_from, default_to), key="ec_date_range")
     with f2:
-        country_ui = st.selectbox(
-            "Country",
-            ["USA", "Eurozone", "United Kingdom", "China", "Japan", "Global"],
-            index=0,
-            key="ec_country",
-        )
+        country_ui = st.selectbox("Country", ["All", "USA", "Eurozone", "United Kingdom", "China", "Japan"], index=1, key="ec_country")
     with f3:
         impact_ui = st.selectbox("Impact", ["All", "High", "Medium", "Low"], index=0, key="ec_impact")
     with f4:
         sort_ui = st.selectbox("Sort by", ["Time", "Impact"], index=0, key="ec_sort")
 
-    # Normalize date input (single-day vs tuple)
     if isinstance(date_range, tuple) and len(date_range) == 2:
         d_from, d_to = date_range
     else:
-        d_from = date_range
-        d_to = date_range
+        d_from = d_to = date_range
     if d_from > d_to:
         d_from, d_to = d_to, d_from
 
     country_map = {
+        "All": [],
         "USA": ["united states"],
         "Eurozone": ["euro zone"],
         "United Kingdom": ["united kingdom"],
         "China": ["china"],
         "Japan": ["japan"],
-        "Global": [],
     }
-    impact_map = {
-        "All": [],
-        "High": ["high"],
-        "Medium": ["medium"],
-        "Low": ["low"],
-    }
+    impact_map = {"All": [], "High": ["high"], "Medium": ["medium"], "Low": ["low"]}
     country_flags = {
         "united states": "🇺🇸 US",
         "euro zone": "🇪🇺 EU",
@@ -3276,98 +3269,86 @@ def economic_calendar_tab():
         "japan": "🇯🇵 JP",
     }
 
-    from_str = d_from.strftime("%d/%m/%Y")
-    to_str = d_to.strftime("%d/%m/%Y")
-    countries = country_map.get(country_ui, ["united states"])
-    importances = impact_map.get(impact_ui, [])
-
     with st.spinner("Načítám ekonomický kalendář..."):
-        df = _fetch_economic_calendar_cached(from_str, to_str, countries, importances)
-
-    if df.empty:
-        st.error(
-            "Nepodařilo se načíst Economic Calendar z investpy. "
-            "Zkus upravit filtry nebo později opakovat. Alternativně otevři plný kalendář na Investing.com."
+        raw_df = _fetch_economic_calendar_cached(
+            d_from.strftime("%d/%m/%Y"),
+            d_to.strftime("%d/%m/%Y"),
+            country_map.get(country_ui, []),
+            impact_map.get(impact_ui, []),
         )
-        st.markdown("[Otevřít plný kalendář na Investing.com](https://www.investing.com/economic-calendar/)")
-        return
 
-    # Best-effort column normalization across investpy versions
-    df_cols = {c.lower(): c for c in df.columns}
-    col_date = df_cols.get("date", "date") if "date" in df_cols else None
-    col_time = df_cols.get("time", "time") if "time" in df_cols else None
-    col_country = df_cols.get("country", "country") if "country" in df_cols else None
-    col_importance = df_cols.get("importance", "importance") if "importance" in df_cols else None
-    col_event = df_cols.get("event", "event") if "event" in df_cols else None
-    col_actual = df_cols.get("actual", "actual") if "actual" in df_cols else None
-    col_forecast = df_cols.get("forecast", "forecast") if "forecast" in df_cols else None
-    col_previous = df_cols.get("previous", "previous") if "previous" in df_cols else None
-
-    out = pd.DataFrame()
-    out["Time (GMT)"] = (df[col_time].astype(str).fillna("N/A") if col_time in df.columns else "N/A")
-    if col_country in df.columns:
-        out["Country"] = df[col_country].astype(str).str.lower().map(country_flags).fillna(df[col_country].astype(str))
+    used_placeholder = False
+    if raw_df.empty:
+        used_placeholder = True
+        st.warning("investpy momentálně nevrátil data. Zobrazuji realistický placeholder (duben 2026).")
+        out = _economic_calendar_placeholder()
     else:
-        out["Country"] = "N/A"
-    if col_importance in df.columns:
-        imp_raw = df[col_importance].astype(str)
-    else:
-        imp_raw = pd.Series([""] * len(df))
+        df_cols = {c.lower(): c for c in raw_df.columns}
+        col_time = df_cols.get("time", "time") if "time" in df_cols else None
+        col_country = df_cols.get("country", "country") if "country" in df_cols else None
+        col_importance = df_cols.get("importance", "importance") if "importance" in df_cols else None
+        col_event = df_cols.get("event", "event") if "event" in df_cols else None
+        col_actual = df_cols.get("actual", "actual") if "actual" in df_cols else None
+        col_forecast = df_cols.get("forecast", "forecast") if "forecast" in df_cols else None
+        col_previous = df_cols.get("previous", "previous") if "previous" in df_cols else None
 
-    def impact_display(txt: str) -> str:
-        t = (txt or "").lower()
-        if "high" in t:
-            return "🔴🔴🔴 High"
-        if "medium" in t:
-            return "🟠🟠 Medium"
-        if "low" in t:
-            return "🟢 Low"
-        return "⚪ N/A"
+        out = pd.DataFrame()
+        out["Time (GMT)"] = raw_df[col_time].astype(str).fillna("N/A") if col_time in raw_df.columns else "N/A"
+        if col_country in raw_df.columns:
+            out["Country"] = raw_df[col_country].astype(str).str.lower().map(country_flags).fillna(raw_df[col_country].astype(str))
+        else:
+            out["Country"] = "N/A"
+        imp_raw = raw_df[col_importance].astype(str) if col_importance in raw_df.columns else pd.Series([""] * len(raw_df))
 
-    out["Impact"] = imp_raw.map(impact_display)
-    out["Event"] = df[col_event].astype(str) if col_event in df.columns else "N/A"
-    out["Actual"] = df[col_actual].astype(str) if col_actual in df.columns else "N/A"
-    out["Forecast"] = df[col_forecast].astype(str) if col_forecast in df.columns else "N/A"
-    out["Previous"] = df[col_previous].astype(str) if col_previous in df.columns else "N/A"
+        def impact_display(txt: str) -> str:
+            t = (txt or "").lower()
+            if "high" in t: return "●●●"
+            if "medium" in t: return "●●"
+            if "low" in t: return "●"
+            return "·"
 
-    # Surprise calculation (best-effort numeric parse)
-    a = out["Actual"].map(_parse_calendar_number)
-    f = out["Forecast"].map(_parse_calendar_number)
-    surprise = a - f
-    out["Surprise"] = surprise.map(lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A")
-    out["_impact_rank"] = imp_raw.map(_impact_rank)
+        out["Impact"] = imp_raw.map(impact_display)
+        out["Event"] = raw_df[col_event].astype(str) if col_event in raw_df.columns else "N/A"
+        out["Actual"] = raw_df[col_actual].astype(str) if col_actual in raw_df.columns else "N/A"
+        out["Forecast"] = raw_df[col_forecast].astype(str) if col_forecast in raw_df.columns else "N/A"
+        out["Previous"] = raw_df[col_previous].astype(str) if col_previous in raw_df.columns else "N/A"
+        out["Surprise"] = (out["Actual"].map(_parse_calendar_number) - out["Forecast"].map(_parse_calendar_number)).map(
+            lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A"
+        )
+        out["_impact_rank"] = imp_raw.map(_impact_rank)
+
+    if "_impact_rank" not in out.columns:
+        out["_impact_rank"] = out["Impact"].map(lambda x: 3 if x == "●●●" else 2 if x == "●●" else 1 if x == "●" else 0)
 
     if sort_ui == "Impact":
         out = out.sort_values(["_impact_rank", "Time (GMT)"], ascending=[False, True])
     else:
         out = out.sort_values(["Time (GMT)", "_impact_rank"], ascending=[True, False])
 
-    # Row styling by impact + surprise color
     def row_style(row):
-        txt = str(row["Impact"]).lower()
-        if "high" in txt:
-            return ["background-color: rgba(244,63,94,0.10)"] * len(row)
-        if "medium" in txt:
-            return ["background-color: rgba(245,158,11,0.08)"] * len(row)
-        if "low" in txt:
-            return ["background-color: rgba(34,197,94,0.06)"] * len(row)
+        if row["Impact"] == "●●●":
+            return ["background-color: rgba(244,63,94,0.16)"] * len(row)
+        if row["Impact"] == "●●":
+            return ["background-color: rgba(245,158,11,0.10)"] * len(row)
+        if row["Impact"] == "●":
+            return ["background-color: rgba(34,197,94,0.08)"] * len(row)
         return [""] * len(row)
 
+    def impact_style(v):
+        if v == "●●●": return "color:#f43f5e;font-weight:800;"
+        if v == "●●": return "color:#f59e0b;font-weight:800;"
+        if v == "●": return "color:#22c55e;font-weight:800;"
+        return "color:#94a3b8;"
+
     def surprise_style(v):
-        if isinstance(v, str) and v.startswith("+"):
-            return "color: #22c55e; font-weight: 700;"
-        if isinstance(v, str) and v.startswith("-"):
-            return "color: #f43f5e; font-weight: 700;"
-        return "color: #94a3b8;"
+        if isinstance(v, str) and v.startswith("+"): return "color:#22c55e;font-weight:700;"
+        if isinstance(v, str) and v.startswith("-"): return "color:#f43f5e;font-weight:700;"
+        return "color:#94a3b8;"
 
     show_cols = ["Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous", "Surprise"]
-    styled = (
-        out[show_cols]
-        .style
-        .apply(row_style, axis=1)
-        .applymap(surprise_style, subset=["Surprise"])
-        .set_properties(subset=["Event"], **{"font-weight": "700"})
-    )
+    styled = out[show_cols].style.apply(row_style, axis=1).applymap(impact_style, subset=["Impact"]).applymap(
+        surprise_style, subset=["Surprise"]
+    ).set_properties(subset=["Event"], **{"font-weight": "700"})
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
     st.markdown(
@@ -3375,14 +3356,21 @@ def economic_calendar_tab():
         <div class="fa-card" style="margin-top:10px;">
             <div style="font-weight:700;color:{C['t1']};margin-bottom:6px;">Legenda</div>
             <div style="font-size:.85rem;color:{C['t2']};line-height:1.7;">
-                🟢 Low impact · 🟠🟠 Medium impact · 🔴🔴🔴 High impact<br>
+                ● nízký impact (zelená) · ●● střední impact (oranžová) · ●●● vysoký impact (červená)<br>
                 Surprise = Actual − Forecast (zeleně pozitivní, červeně negativní).
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("[Otevřít plný kalendář na Investing.com](https://www.investing.com/economic-calendar/)")
+    if hasattr(st, "link_button"):
+        st.link_button("Otevřít plný kalendář na Investing.com", "https://www.investing.com/economic-calendar/")
+    else:
+        st.markdown("[Otevřít plný kalendář na Investing.com](https://www.investing.com/economic-calendar/)")
+    st.caption(
+        "Placeholder data (duben 2026)." if used_placeholder
+        else "Reálná data z investpy. V další verzi přejdeme na stabilnější API (FMP / Trading Economics)."
+    )
 
 def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
