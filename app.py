@@ -1165,8 +1165,8 @@ def mini_sparkline(values, color, height=55):
 # ─────────────────────────────────────────────
 #  NAV / HEADER
 # ─────────────────────────────────────────────
-PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Settings"]
-EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Settings":"⚙️"}
+PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Options", "Dividendy", "Sektor Mapa", "Settings"]
+EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Options":"📐","Dividendy":"💰","Sektor Mapa":"🗺️","Settings":"⚙️"}
 CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty", "Settings"]
 NAV_LABELS = {
     "Dashboard": "📊 Home",
@@ -1248,7 +1248,7 @@ def page_dashboard():
 
     # ── Market indices ─────────────────────
     indices = {"S&P 500":"^GSPC","NASDAQ":"^IXIC","DOW":"^DJI","VIX":"^VIX","Russell":"^RUT"}
-    cols = st.columns(5)
+    cols = st.columns(6)
     for idx,(name,sym) in enumerate(indices.items()):
         with cols[idx]:
             try:
@@ -1270,6 +1270,24 @@ def page_dashboard():
                     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
             except Exception:
                 st.markdown(f"<div class='fa-card'><span style='color:{C['t3']};'>{name}</span></div>", unsafe_allow_html=True)
+
+    # Fear & Greed mini tile
+    with cols[5]:
+        try:
+            fg_mini = compute_fear_greed()
+            fg_score = fg_mini["score"]; fg_col = fg_mini["color"]; fg_lbl = fg_mini["label"]
+            st.markdown(f"""
+                <div class="fa-card" style="text-align:center;border-color:{fg_col}30;padding:14px 10px 6px;">
+                    <div style="font-size:.7rem;color:{C['t2']};text-transform:uppercase;letter-spacing:.05em;">Fear & Greed</div>
+                    <div class="mono" style="font-size:1.3rem;font-weight:700;color:{fg_col};margin:4px 0;">{fg_score}/100</div>
+                    <div style="font-size:.78rem;font-weight:700;color:{fg_col};">{fg_lbl}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button("📊 Více", key="dash_fg_btn", use_container_width=True):
+                st.session_state["page"] = "Sektor Mapa"
+                st.rerun()
+        except Exception:
+            pass
 
     st.markdown("---")
 
@@ -3832,6 +3850,435 @@ def page_piotroski():
 
 
 
+
+# ─────────────────────────────────────────────
+#  v11: FEAR & GREED INDEX
+# ─────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def compute_fear_greed() -> dict:
+    try:
+        scores = []; labels = []
+        vix_h = yf.Ticker("^VIX").history(period="5d")
+        if not vix_h.empty:
+            vix = float(vix_h["Close"].iloc[-1])
+            vix_score = max(0, min(100, 100 - (vix - 10) * 2.5))
+            scores.append(vix_score); labels.append(("VIX", f"{vix:.1f}", round(vix_score)))
+        spy_h = yf.Ticker("^GSPC").history(period="1y")
+        if not spy_h.empty and len(spy_h) > 125:
+            cur_spy = spy_h["Close"].iloc[-1]; ma125 = spy_h["Close"].iloc[-125:].mean()
+            diff_pct = (cur_spy - ma125) / ma125 * 100
+            mom_score = max(0, min(100, 50 + diff_pct * 3))
+            scores.append(mom_score); labels.append(("S&P Momentum", f"{diff_pct:+.1f}%", round(mom_score)))
+        hyg_h = yf.Ticker("HYG").history(period="30d"); lqd_h = yf.Ticker("LQD").history(period="30d")
+        if not hyg_h.empty and not lqd_h.empty and len(hyg_h)>1 and len(lqd_h)>1:
+            spread = (hyg_h["Close"].iloc[-1]/hyg_h["Close"].iloc[0]-1)*100 - (lqd_h["Close"].iloc[-1]/lqd_h["Close"].iloc[0]-1)*100
+            junk_score = max(0, min(100, 50 + spread * 10))
+            scores.append(junk_score); labels.append(("Junk Bond Demand", f"HYG-LQD: {spread:+.2f}%", round(junk_score)))
+        if not spy_h.empty and len(spy_h) >= 10:
+            up_days = int((spy_h["Close"].tail(10).diff() > 0).sum())
+            breadth_score = max(0, min(100, up_days/10*100))
+            scores.append(breadth_score); labels.append(("Market Breadth", f"{up_days}/10 up days", round(breadth_score)))
+        gold_h = yf.Ticker("GC=F").history(period="30d")
+        if not gold_h.empty and not spy_h.empty and len(spy_h)>=30:
+            gold_ret = (gold_h["Close"].iloc[-1]/gold_h["Close"].iloc[0]-1)*100
+            spy_ret  = (spy_h["Close"].iloc[-1]/spy_h["Close"].iloc[-30]-1)*100
+            spread2  = spy_ret - gold_ret
+            safe_score = max(0, min(100, 50 + spread2*2))
+            scores.append(safe_score); labels.append(("Safe Haven", f"Stocks vs Gold: {spread2:+.1f}%", round(safe_score)))
+        if not scores:
+            return {"score":50,"label":"Neutrální","color":C["orange"],"components":[]}
+        total = sum(scores)/len(scores)
+        if total>=75:   fg_label,color="Extrémní chamtivost",C["green"]
+        elif total>=55: fg_label,color="Chamtivost","#4ade80"
+        elif total>=45: fg_label,color="Neutrální",C["orange"]
+        elif total>=25: fg_label,color="Strach","#fb923c"
+        else:           fg_label,color="Extrémní strach",C["red"]
+        return {"score":round(total),"label":fg_label,"color":color,"components":labels}
+    except Exception as e:
+        return {"score":50,"label":"Neutrální","color":C["orange"],"components":[],"error":str(e)}
+
+
+# ─────────────────────────────────────────────
+#  v11: BLACK-SCHOLES
+# ─────────────────────────────────────────────
+def black_scholes(S,K,T,r,sigma,option_type="call"):
+    import math
+    if T<=0 or sigma<=0 or S<=0 or K<=0:
+        intrinsic=max(0,S-K) if option_type=="call" else max(0,K-S)
+        return {"price":intrinsic,"delta":0,"gamma":0,"theta":0,"vega":0,"rho":0}
+    def _cdf(x): return 0.5*(1+math.erf(x/math.sqrt(2)))
+    def _pdf(x): return math.exp(-0.5*x**2)/math.sqrt(2*math.pi)
+    d1=(math.log(S/K)+(r+0.5*sigma**2)*T)/(sigma*math.sqrt(T)); d2=d1-sigma*math.sqrt(T)
+    if option_type=="call":
+        price=S*_cdf(d1)-K*math.exp(-r*T)*_cdf(d2); delta=_cdf(d1); rho=K*T*math.exp(-r*T)*_cdf(d2)/100
+    else:
+        price=K*math.exp(-r*T)*_cdf(-d2)-S*_cdf(-d1); delta=_cdf(d1)-1; rho=-K*T*math.exp(-r*T)*_cdf(-d2)/100
+    gamma=_pdf(d1)/(S*sigma*math.sqrt(T))
+    vega=S*_pdf(d1)*math.sqrt(T)/100
+    theta=(-(S*_pdf(d1)*sigma)/(2*math.sqrt(T))-r*K*math.exp(-r*T)*(_cdf(d2) if option_type=="call" else _cdf(-d2)))/365
+    return {"price":round(price,4),"delta":round(delta,4),"gamma":round(gamma,6),"theta":round(theta,4),"vega":round(vega,4),"rho":round(rho,4)}
+
+
+# ─────────────────────────────────────────────
+#  v11: DIVIDEND DATA
+# ─────────────────────────────────────────────
+@st.cache_data(ttl=3600)
+def fetch_dividend_data(ticker):
+    try:
+        s=yf.Ticker(ticker); info=s.info or {}; div_hist=s.dividends
+        if div_hist is None or div_hist.empty: return {"has_dividends":False,"info":info}
+        div_hist=div_hist.copy(); div_hist.index=pd.to_datetime(div_hist.index).tz_localize(None)
+        annual=div_hist.resample("YE").sum()
+        cagr=None
+        if len(annual)>=5:
+            sv=float(annual.iloc[-5]); ev=float(annual.iloc[-1])
+            if sv>0 and ev>0: cagr=(ev/sv)**(1/5)-1
+        eps=info.get("trailingEps") or 0; div_rate=info.get("dividendRate") or 0
+        payout_ratio=(div_rate/eps) if eps>0 else None
+        growth_streak=0
+        if len(annual)>=2:
+            for i in range(len(annual)-1,0,-1):
+                if annual.iloc[i]>annual.iloc[i-1]: growth_streak+=1
+                else: break
+        return {"has_dividends":True,"history":div_hist,"annual":annual,"yield":info.get("dividendYield") or 0,
+                "rate":div_rate,"cagr":cagr,"payout_ratio":payout_ratio,"growth_streak":growth_streak,
+                "ex_date":info.get("exDividendDate"),"info":info}
+    except Exception as e:
+        return {"has_dividends":False,"error":str(e)}
+
+
+# ─────────────────────────────────────────────
+#  v11: SEKTOR DATA
+# ─────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def fetch_sector_performance():
+    SECTORS={"Technology":"XLK","Healthcare":"XLV","Financials":"XLF","Energy":"XLE",
+              "Consumer Disc.":"XLY","Consumer Stapl.":"XLP","Industrials":"XLI",
+              "Materials":"XLB","Utilities":"XLU","Real Estate":"XLRE","Communication":"XLC"}
+    results={}
+    for name,etf in SECTORS.items():
+        try:
+            h=yf.Ticker(etf).history(period="30d")
+            if h.empty or len(h)<5: continue
+            d1=(h["Close"].iloc[-1]/h["Close"].iloc[-2]-1)*100
+            w1=(h["Close"].iloc[-1]/h["Close"].iloc[min(-5,-len(h))]-1)*100
+            m1=(h["Close"].iloc[-1]/h["Close"].iloc[0]-1)*100
+            results[name]={"etf":etf,"1d":round(d1,2),"1w":round(w1,2),"1m":round(m1,2),"price":round(float(h["Close"].iloc[-1]),2)}
+        except Exception: continue
+    return results
+
+
+# ─────────────────────────────────────────────
+#  v11: PAGE — OPTIONS
+# ─────────────────────────────────────────────
+def page_options():
+    st.markdown("<h2 class='grad' style='margin:0 0 .5rem;'>📐 Options Kalkulačka (Black-Scholes)</h2>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Fair value opcí a Greeks. Zadej parametry — výpočet okamžitě.</div>", unsafe_allow_html=True)
+    tab_pricer, tab_payoff, tab_surface = st.tabs(["🧮 Pricer", "📊 Payoff Diagram", "🌊 Delta Povrch"])
+    with tab_pricer:
+        oc1,oc2 = st.columns([1,1])
+        with oc1:
+            opt_ticker = normalized_ticker_input("Ticker (auto načtení ceny)", "opt_ticker", default=st.session_state.get("ticker","AAPL"))
+            opt_type = st.radio("Typ opce", ["Call","Put"], horizontal=True, key="opt_type_r")
+            auto_price=None; auto_iv=30.0
+            if opt_ticker:
+                try:
+                    h_opt=yf.Ticker(opt_ticker).history(period="2d")
+                    if not h_opt.empty: auto_price=float(h_opt["Close"].iloc[-1])
+                    _,oi=fetch_stock(opt_ticker,"1y"); beta=oi.get("beta") or 1.0
+                    auto_iv=float(min(max(15.0,beta*22),90.0))
+                except Exception: pass
+            S=st.number_input("Aktuální cena (S)", value=auto_price or 150.0, step=1.0, format="%.2f")
+            K=st.number_input("Strike cena (K)", value=round((auto_price or 150.0)*1.05,0), step=1.0, format="%.2f")
+            T_days=st.number_input("Dny do expirace", min_value=1, max_value=730, value=30, step=1)
+            T=T_days/365.0
+            r=st.number_input("Bezriziková sazba (% p.a.)", 0.0, 20.0, 5.0, 0.1, format="%.1f")/100
+            sigma=st.number_input("Implikovaná volatilita (%)", 1.0, 200.0, auto_iv, 0.5, format="%.1f")/100
+        with oc2:
+            result=black_scholes(S,K,T,r,sigma,opt_type.lower()); price=result["price"]
+            is_itm=(S>K) if opt_type=="Call" else (S<K)
+            itm_col=C["green"] if is_itm else C["red"]
+            itm_lbl="IN THE MONEY ✅" if is_itm else "OUT OF THE MONEY ❌"
+            intrinsic=max(0.0,S-K) if opt_type=="Call" else max(0.0,K-S)
+            time_value=max(0.0,price-intrinsic)
+            st.markdown(f"""
+                <div class="fa-card" style="text-align:center;border-color:{itm_col}50;margin-bottom:14px;">
+                    <div style="font-size:.75rem;color:{C['t3']};text-transform:uppercase;">{opt_type.upper()} OPTION PRICE</div>
+                    <div class="mono" style="font-size:3rem;font-weight:800;color:{itm_col};">${price:.4f}</div>
+                    <div style="font-size:.8rem;font-weight:700;color:{itm_col};margin-bottom:10px;">{itm_lbl}</div>
+                    <div style="display:flex;justify-content:space-around;padding-top:10px;border-top:1px solid {C['border']};">
+                        <div><div style="font-size:.7rem;color:{C['t3']};">Vnitřní hodnota</div><div class="mono" style="font-size:.95rem;color:{C['t1']};font-weight:700;">${intrinsic:.4f}</div></div>
+                        <div><div style="font-size:.7rem;color:{C['t3']};">Časová hodnota</div><div class="mono" style="font-size:.95rem;color:{C['blue']};font-weight:700;">${time_value:.4f}</div></div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            for lbl,val,desc,col in [
+                ("Δ Delta",result["delta"],"Změna ceny na $1 pohyb podkladu",C["blue"]),
+                ("Γ Gamma",result["gamma"],"Změna Delty na $1 pohyb",C["purple"]),
+                ("Θ Theta",result["theta"],"Time decay za jeden den",C["red"]),
+                ("V Vega",result["vega"],"Změna na 1% změnu volatility",C["green"]),
+                ("ρ Rho",result["rho"],"Změna na 1% změnu sazby",C["orange"]),
+            ]:
+                st.markdown(f"""
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;
+                        background:{C['card']};border-radius:6px;margin-bottom:4px;border:1px solid {C['border']};">
+                        <div>
+                            <span style="font-size:.82rem;font-weight:700;color:{col};">{lbl}</span>
+                            <span style="font-size:.72rem;color:{C['t3']};margin-left:8px;">{desc}</span>
+                        </div>
+                        <span class="mono" style="font-size:.9rem;font-weight:700;color:{C['t1']};">{val:+.4f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+    with tab_payoff:
+        try:
+            price_range=np.linspace(S*0.5,S*1.5,200)
+            payoff=np.maximum(0,price_range-K) if opt_type=="Call" else np.maximum(0,K-price_range)
+            pnl=payoff-price
+            fig_pay=go.Figure()
+            fig_pay.add_trace(go.Scatter(x=price_range,y=pnl,name="P&L",
+                line=dict(color=C["blue"],width=2.5),fill="tozeroy",fillcolor=with_alpha(C["blue"],0.10)))
+            fig_pay.add_hline(y=0,line_color=C["border2"],line_dash="dash")
+            fig_pay.add_vline(x=K,line_color=C["orange"],line_dash="dot",
+                annotation_text=f"Strike ${K:.0f}",annotation_font_color=C["orange"])
+            fig_pay.add_vline(x=S,line_color=C["green"],line_dash="dot",
+                annotation_text=f"Spot ${S:.0f}",annotation_font_color=C["green"])
+            fig_pay.update_layout(**CHART_LAYOUT,height=380,
+                title=dict(text=f"{opt_type} Payoff Diagram",font=dict(color=C["t2"],size=13)),
+                yaxis_title="P&L ($)",xaxis_title="Cena podkladu ($)")
+            st.plotly_chart(fig_pay,use_container_width=True,config={"displayModeBar":False})
+            breakeven=K+price if opt_type=="Call" else K-price
+            be1,be2,be3=st.columns(3)
+            with be1: st.metric("Breakeven",f"${breakeven:.2f}")
+            with be2: st.metric("Max. ztráta (premium)",f"${abs(price):.4f}")
+            with be3: st.metric("Max. zisk","Neomezený" if opt_type=="Call" else f"${K-price:.4f}")
+        except Exception as e:
+            st.warning(f"Nelze vykreslit payoff: {e}")
+    with tab_surface:
+        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:.8rem;'>Delta povrch — jak se Delta mění s cenou podkladu a zbývajícím časem.</div>", unsafe_allow_html=True)
+        try:
+            spot_range=np.linspace(S*0.7,S*1.3,35); time_range=np.linspace(1/365,1.0,25)
+            Z_delta=np.zeros((len(time_range),len(spot_range)))
+            for ti,tv in enumerate(time_range):
+                for si,sv in enumerate(spot_range):
+                    Z_delta[ti,si]=black_scholes(sv,K,tv,r,sigma,opt_type.lower())["delta"]
+            fig_surf=go.Figure(go.Surface(z=Z_delta,x=spot_range,y=time_range*365,
+                colorscale="RdYlGn",colorbar=dict(title="Delta",tickfont=dict(color=C["t2"]))))
+            fig_surf.update_layout(paper_bgcolor="rgba(0,0,0,0)",height=440,margin=dict(l=0,r=0,t=30,b=0),
+                font=dict(color=C["t1"]),
+                scene=dict(xaxis_title="Cena (S)",yaxis_title="Dny do exp.",zaxis_title="Delta",
+                    xaxis=dict(backgroundcolor="rgba(0,0,0,0)",gridcolor=C["border"]),
+                    yaxis=dict(backgroundcolor="rgba(0,0,0,0)",gridcolor=C["border"]),
+                    zaxis=dict(backgroundcolor="rgba(0,0,0,0)",gridcolor=C["border"])))
+            st.plotly_chart(fig_surf,use_container_width=True,config={"displayModeBar":False})
+        except Exception as e:
+            st.warning(f"Nelze vykreslit povrch: {e}")
+
+
+# ─────────────────────────────────────────────
+#  v11: PAGE — DIVIDENDY
+# ─────────────────────────────────────────────
+def page_dividendy():
+    st.markdown("<h2 class='grad' style='margin:0 0 .5rem;'>💰 Dividend Tracker</h2>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Dividendové akcie, historie výplat, CAGR dividend a ex-dividend kalendář.</div>", unsafe_allow_html=True)
+    tab_single,tab_screen,tab_calendar=st.tabs(["🔍 Analýza akcie","📋 Dividend Screener","📅 Ex-Div Kalendář"])
+    with tab_single:
+        div_ticker=normalized_ticker_input("Ticker","div_ticker",default=st.session_state.get("ticker","AAPL"))
+        if st.button("📊 Načíst dividendová data",use_container_width=True,key="div_load"):
+            with st.spinner("Načítám…"):
+                ddata=fetch_dividend_data(div_ticker)
+            st.session_state["div_data_cache"]=ddata; st.session_state["div_data_ticker"]=div_ticker
+        ddata=st.session_state.get("div_data_cache") if st.session_state.get("div_data_ticker")==div_ticker else None
+        if ddata is None:
+            st.info("Klikni na tlačítko pro načtení.")
+        elif not ddata.get("has_dividends"):
+            st.warning(f"{div_ticker} nevyplácí dividendy nebo data nejsou dostupná.")
+        else:
+            dy=ddata.get("yield",0) or 0; rate=ddata.get("rate",0) or 0
+            cagr=ddata.get("cagr"); pr=ddata.get("payout_ratio"); streak=ddata.get("growth_streak",0)
+            m1,m2,m3,m4,m5=st.columns(5)
+            with m1: st.metric("Dividendový výnos",f"{dy*100:.2f}%")
+            with m2: st.metric("Roční dividenda",f"${rate:.2f}")
+            with m3: st.metric("CAGR dividend (5Y)",f"{cagr*100:.1f}%" if cagr else "N/A")
+            with m4: st.metric("Payout Ratio",f"{pr*100:.0f}%" if pr else "N/A")
+            with m5: st.metric("Roky růstu za sebou",str(streak))
+            st.markdown("---")
+            annual=ddata.get("annual")
+            if annual is not None and not annual.empty:
+                years=[str(d.year) for d in annual.index]; values=annual.values.tolist()
+                bar_colors=[C["green"] if i==len(values)-1 else with_alpha(C["blue"],0.6) for i in range(len(values))]
+                fig_div=go.Figure(go.Bar(x=years,y=values,marker_color=bar_colors,
+                    text=[f"${v:.2f}" for v in values],textposition="outside",textfont=dict(color=C["t2"],size=10)))
+                fig_div.update_layout(**CHART_LAYOUT,height=300,
+                    title=dict(text="Roční dividenda (USD/akcii)",font=dict(color=C["t2"],size=13)))
+                st.plotly_chart(fig_div,use_container_width=True,config={"displayModeBar":False})
+            hist=ddata.get("history")
+            if hist is not None and not hist.empty:
+                with st.expander("📋 Historie výplat (poslední 3 roky)"):
+                    cutoff=pd.Timestamp.now()-pd.DateOffset(years=3)
+                    recent=hist[hist.index>=cutoff].sort_index(ascending=False)
+                    st.dataframe(recent.rename("Dividenda ($)").reset_index().rename(columns={"Date":"Datum"}),
+                        use_container_width=True,hide_index=True)
+    with tab_screen:
+        div_pool_default=["AAPL","MSFT","JNJ","KO","PG","MCD","T","VZ","PEP","XOM","CVX","ABT","MMM","O","MAIN","SCHD","HDV","VYM","NOBL"]
+        data_d=load_data(); div_pool=list(set(data_d.get("watchlist",[]) + div_pool_default))
+        extra_d=st.text_input("Přidat vlastní tickery",placeholder="ENB, REALTY, …",key="div_extra")
+        if extra_d: div_pool=list(set(div_pool+[t.strip().upper() for t in extra_d.split(",") if t.strip()]))
+        min_yield=st.slider("Min. dividendový výnos (%)",0.0,15.0,2.0,0.5,key="div_miny")
+        max_payout=st.slider("Max. payout ratio (%)",10,200,100,5,key="div_maxp")
+        if st.button("🔍 Spustit dividend screener",use_container_width=True,key="div_screen"):
+            screen_results=[]; prog=st.progress(0,text="Načítám…")
+            for pi,tk in enumerate(div_pool):
+                try:
+                    dd=fetch_dividend_data(tk)
+                    if not dd.get("has_dividends"): continue
+                    dy_v=(dd.get("yield") or 0)*100; pr_v=(dd.get("payout_ratio") or 0)*100; cagr_v=(dd.get("cagr") or 0)*100
+                    if dy_v<min_yield or pr_v>max_payout: continue
+                    screen_results.append({"Ticker":tk,"Výnos %":round(dy_v,2),"Roční div $":round(dd.get("rate") or 0,2),
+                        "CAGR 5Y %":round(cagr_v,1),"Payout %":round(pr_v,1),"Roky růstu":dd.get("growth_streak",0)})
+                except Exception: pass
+                prog.progress((pi+1)/len(div_pool),text=f"Kontroluji {tk}…")
+            prog.empty()
+            if not screen_results: st.info("Žádné akcie nesplňují kritéria.")
+            else:
+                screen_results.sort(key=lambda x:x["Výnos %"],reverse=True)
+                st.dataframe(pd.DataFrame(screen_results),use_container_width=True,hide_index=True)
+    with tab_calendar:
+        data_cal=load_data()
+        cal_pool=list(set(data_cal.get("watchlist",[]) + ["JNJ","KO","PG","MCD","T","VZ","XOM","CVX","MSFT","AAPL"]))
+        cal_items=[]; prog_c=st.progress(0,text="Načítám kalendář…")
+        for pi,tk in enumerate(cal_pool):
+            try:
+                info_cal=yf.Ticker(tk).info or {}
+                ex_ts=info_cal.get("exDividendDate"); div_r=info_cal.get("dividendRate") or 0
+                dy_c=(info_cal.get("dividendYield") or 0)*100
+                if ex_ts and div_r>0:
+                    ex_dt=datetime.fromtimestamp(int(ex_ts)).strftime("%Y-%m-%d")
+                    days_to=(datetime.fromtimestamp(int(ex_ts))-datetime.now()).days
+                    cal_items.append({"Ticker":tk,"Ex-Date":ex_dt,"Dny do ex-date":days_to,"Roční div $":round(div_r,2),"Výnos %":round(dy_c,2)})
+            except Exception: pass
+            prog_c.progress((pi+1)/len(cal_pool),text=f"Načítám {tk}…")
+        prog_c.empty()
+        if cal_items:
+            cal_items.sort(key=lambda x:x["Dny do ex-date"])
+            df_cal=pd.DataFrame(cal_items)
+            upcoming=df_cal[df_cal["Dny do ex-date"]>=0].head(20)
+            past=df_cal[df_cal["Dny do ex-date"]<0].tail(5)
+            if not upcoming.empty:
+                st.markdown(f"<div style='font-weight:600;color:{C['green']};margin-bottom:6px;'>📅 Nadcházející</div>", unsafe_allow_html=True)
+                st.dataframe(upcoming,use_container_width=True,hide_index=True)
+            if not past.empty:
+                st.markdown(f"<div style='font-weight:600;color:{C['t3']};margin:10px 0 6px;'>⏮ Nedávné</div>", unsafe_allow_html=True)
+                st.dataframe(past,use_container_width=True,hide_index=True)
+        else:
+            st.info("Žádné ex-dividend datum nenalezeno.")
+
+
+# ─────────────────────────────────────────────
+#  v11: PAGE — SEKTOR MAPA
+# ─────────────────────────────────────────────
+def page_sektor_mapa():
+    st.markdown("<h2 class='grad' style='margin:0 0 .5rem;'>🗺️ Sektor Mapa & Rotace</h2>", unsafe_allow_html=True)
+    tab_heat,tab_fg,tab_compare=st.tabs(["🌡️ Heatmapa sektorů","😱 Fear & Greed Index","📊 Srovnání sektorů"])
+    with tab_heat:
+        period_sm=st.radio("Zobrazit výkon za",["1d","1w","1m"],horizontal=True,index=1,key="sm_period")
+        with st.spinner("Načítám sektor data…"):
+            sdata=fetch_sector_performance()
+        if not sdata:
+            st.warning("Nelze načíst data sektorů.")
+        else:
+            sorted_sectors=sorted(sdata.items(),key=lambda x:x[1][period_sm],reverse=True)
+            rows_sm=[sorted_sectors[i:i+4] for i in range(0,len(sorted_sectors),4)]
+            for row in rows_sm:
+                cols_sm=st.columns(4)
+                for j,(sec_name,sec_data) in enumerate(row):
+                    perf=sec_data[period_sm]; intensity=min(abs(perf)/3,1.0)
+                    if perf>=0: bg=f"rgba(0,230,118,{0.08+intensity*0.28})"; col=C["green"]; icon="▲"
+                    else:       bg=f"rgba(255,61,90,{0.08+intensity*0.28})";  col=C["red"];   icon="▼"
+                    with cols_sm[j]:
+                        st.markdown(f"""
+                            <div class="fa-card" style="text-align:center;background:{bg};border-color:{col}30;padding:16px 10px;">
+                                <div style="font-size:.72rem;color:{C['t2']};font-weight:600;text-transform:uppercase;">{sec_name}</div>
+                                <div class="mono" style="font-size:1.6rem;font-weight:800;color:{col};margin:6px 0;">{icon} {abs(perf):.2f}%</div>
+                                <div style="font-size:.72rem;color:{C['t3']};">{sec_data['etf']} · ${sec_data['price']:.2f}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        if st.button("🔍",key=f"sm_{sec_name}{j}",use_container_width=True):
+                            st.session_state["ticker"]=sec_data["etf"]; st.session_state["page"]="Stock Detail"; st.rerun()
+            st.markdown("---")
+            labels_sm=[s[0] for s in sorted_sectors]; values_sm=[s[1][period_sm] for s in sorted_sectors]
+            colors_sm=[C["green"] if v>=0 else C["red"] for v in values_sm]
+            fig_sm=go.Figure(go.Bar(x=values_sm,y=labels_sm,orientation="h",marker_color=colors_sm,
+                text=[f"{v:+.2f}%" for v in values_sm],textposition="outside",textfont=dict(color=C["t2"],size=10)))
+            fig_sm.update_layout(**CHART_LAYOUT,height=360,
+                title=dict(text=f"Výkon sektorů ({period_sm})",font=dict(color=C["t2"],size=13)),
+                xaxis_title="Výkon (%)",yaxis=dict(showgrid=False,linecolor=C["border"],tickfont=dict(color=C["t2"])))
+            st.plotly_chart(fig_sm,use_container_width=True,config={"displayModeBar":False})
+    with tab_fg:
+        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Vlastní Fear & Greed Index z VIX, S&P momentum, junk bondů, šíře trhu a safe haven demand.</div>", unsafe_allow_html=True)
+        with st.spinner("Počítám Fear & Greed Index…"):
+            fg=compute_fear_greed()
+        score=fg["score"]; fg_label=fg["label"]; color=fg["color"]
+        fg1,fg2=st.columns([1,2])
+        with fg1:
+            fig_fg=go.Figure(go.Indicator(mode="gauge+number",value=score,
+                number={"font":{"size":52,"family":"JetBrains Mono","color":color}},
+                gauge={"axis":{"range":[0,100],"tickfont":{"color":C["t2"]}},
+                    "bar":{"color":color,"thickness":0.25},"bgcolor":"rgba(0,0,0,0)","bordercolor":C["border"],
+                    "steps":[{"range":[0,25],"color":"rgba(255,61,90,0.20)"},{"range":[25,45],"color":"rgba(251,146,60,0.14)"},
+                              {"range":[45,55],"color":"rgba(255,255,255,0.04)"},{"range":[55,75],"color":"rgba(74,222,128,0.12)"},
+                              {"range":[75,100],"color":"rgba(0,230,118,0.22)"}],
+                    "threshold":{"line":{"color":color,"width":3},"thickness":0.8,"value":score}}))
+            fig_fg.update_layout(height=280,margin=dict(l=10,r=10,t=10,b=10),paper_bgcolor="rgba(0,0,0,0)",font=dict(color=C["t1"]))
+            st.plotly_chart(fig_fg,use_container_width=True,config={"displayModeBar":False})
+            st.markdown(f"""
+                <div style="text-align:center;margin-top:-10px;">
+                    <div style="font-size:1.4rem;font-weight:800;color:{color};">{fg_label}</div>
+                    <div style="font-size:.75rem;color:{C['t3']};margin-top:4px;">Score {score}/100</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with fg2:
+            st.markdown(f"<div style='font-weight:600;color:{C['t2']};margin-bottom:8px;'>Složky indexu</div>", unsafe_allow_html=True)
+            for comp_name,comp_val,comp_score in fg.get("components",[]):
+                bar_c=C["green"] if comp_score>=55 else C["orange"] if comp_score>=45 else C["red"]
+                st.markdown(f"""
+                    <div style="margin-bottom:10px;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                            <span style="font-size:.82rem;font-weight:600;color:{C['t2']};">{comp_name}</span>
+                            <span style="display:flex;gap:14px;">
+                                <span class="mono" style="font-size:.78rem;color:{C['t3']};">{comp_val}</span>
+                                <span class="mono" style="font-size:.82rem;font-weight:700;color:{bar_c};">{comp_score}/100</span>
+                            </span>
+                        </div>
+                        <div style="background:{C['bg2']};border-radius:4px;height:8px;overflow:hidden;">
+                            <div style="width:{comp_score}%;background:{bar_c};height:100%;border-radius:4px;"></div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+    with tab_compare:
+        with st.spinner("Načítám historická data…"):
+            sdata2=fetch_sector_performance()
+        if sdata2:
+            selected_secs=st.multiselect("Vyber sektory ke srovnání",list(sdata2.keys()),default=list(sdata2.keys())[:5],key="sm_compare_sel")
+            period_cmp=st.radio("Perioda",["1mo","3mo","6mo","1y"],horizontal=True,index=2,key="sm_cmp_per")
+            if selected_secs:
+                fig_cmp=go.Figure()
+                palette=[C["blue"],C["green"],C["orange"],C["purple"],C["red"],"#f472b6","#34d399","#fb923c","#a78bfa","#60a5fa","#fbbf24"]
+                for idx_s,sec_name in enumerate(selected_secs):
+                    etf=sdata2[sec_name]["etf"]
+                    try:
+                        h_cmp=yf.Ticker(etf).history(period=period_cmp)["Close"]
+                        if h_cmp.empty: continue
+                        normed=h_cmp/h_cmp.iloc[0]*100
+                        fig_cmp.add_trace(go.Scatter(x=normed.index,y=normed.values,name=f"{sec_name} ({etf})",
+                            line=dict(color=palette[idx_s%len(palette)],width=2)))
+                    except Exception: continue
+                fig_cmp.add_hline(y=100,line_color=C["border2"],line_dash="dash",opacity=0.5)
+                fig_cmp.update_layout(**CHART_LAYOUT,height=420,
+                    title=dict(text="Normalizovaný výkon sektorů (báze=100)",font=dict(color=C["t2"],size=13)),
+                    yaxis_title="Výkon (báze 100)",legend=dict(orientation="h",y=-0.15,bgcolor="rgba(0,0,0,0)"))
+                st.plotly_chart(fig_cmp,use_container_width=True,config={"displayModeBar":False})
+
+
 def main():
     if "page"   not in st.session_state: st.session_state["page"]   = "Dashboard"
     if "ticker" not in st.session_state: st.session_state["ticker"] = "AAPL"
@@ -3861,6 +4308,9 @@ def main():
         "Backtesting":  page_backtesting,
         "Monte Carlo":  page_monte_carlo,
         "Piotroski":    page_piotroski,
+        "Options":      page_options,
+        "Dividendy":    page_dividendy,
+        "Sektor Mapa":  page_sektor_mapa,
         "Settings":     page_settings,
     }
     handler = ROUTER.get(page, page_dashboard)
@@ -3870,7 +4320,7 @@ def main():
     st.markdown(f"""
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <span style="font-size:.72rem;color:{C['t3']};">◆ FinAnalyzer Pro v{APP_VERSION} · {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}</span>
-            <span style="font-size:.72rem;color:{C['t3']};">Data: Yahoo Finance · SEC EDGAR · Zpožděná data</span>
+            <span style="font-size:.72rem;color:{C['t3']};">Data: Yahoo Finance · SEC EDGAR · Zpožděná data · v11 — Options · Dividendy · Sektor Mapa · Fear & Greed</span>
         </div>
     """, unsafe_allow_html=True)
 
