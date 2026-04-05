@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -10,6 +11,7 @@ import os
 import requests
 import re
 import html
+import concurrent.futures as cf
 from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
@@ -25,26 +27,26 @@ st.set_page_config(
 )
 
 C = {
-    "bg":        "#0a0a0c",
-    "bg2":       "#101014",
-    "card":      "#16161c",
-    "border":    "rgba(255,255,255,0.07)",
-    "border2":   "rgba(255,255,255,0.14)",
-    "green":     "#00e676",
-    "green_d":   "rgba(0,230,118,0.12)",
-    "red":       "#ff3d5a",
-    "red_d":     "rgba(255,61,90,0.12)",
-    "blue":      "#00b4d8",
-    "blue_d":    "rgba(0,180,216,0.12)",
-    "purple":    "#7c3aed",
+    "bg":        "#070b14",
+    "bg2":       "#0d1526",
+    "card":      "rgba(18, 28, 46, 0.72)",
+    "border":    "rgba(125, 211, 252, 0.22)",
+    "border2":   "rgba(148, 163, 184, 0.28)",
+    "green":     "#22c55e",
+    "green_d":   "rgba(34,197,94,0.16)",
+    "red":       "#f43f5e",
+    "red_d":     "rgba(244,63,94,0.14)",
+    "blue":      "#38bdf8",
+    "blue_d":    "rgba(56,189,248,0.16)",
+    "purple":    "#a78bfa",
     "orange":    "#f59e0b",
-    "t1":        "#f0f0f5",
-    "t2":        "#9090aa",
-    "t3":        "#606075",
-    "grid":      "rgba(255,255,255,0.03)",
+    "t1":        "#e2e8f0",
+    "t2":        "#94a3b8",
+    "t3":        "#64748b",
+    "grid":      "rgba(148,163,184,0.10)",
 }
 
-APP_VERSION = "11.0"
+APP_VERSION = "12.0"
 
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
@@ -75,58 +77,81 @@ st.markdown(f"""
 
 *, *::before, *::after {{ box-sizing: border-box; font-family: 'Inter', sans-serif; }}
 
-.stApp {{ background: {C['bg']}; color: {C['t1']}; }}
+.stApp {{
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(56,189,248,0.18), transparent 45%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(167,139,250,0.15), transparent 40%),
+      linear-gradient(180deg, #060a12 0%, #0a1221 55%, #0b1324 100%);
+    color: {C['t1']};
+}}
+
+/* Glass containers */
+.fa-card {{
+    background: {C['card']};
+    border: 1px solid {C['border']};
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(2, 8, 23, 0.35);
+}}
 
 /* buttons */
 .stButton > button {{
-    background: transparent !important;
-    color: {C['t2']} !important;
+    background: linear-gradient(180deg, rgba(30,41,59,0.7), rgba(15,23,42,0.7)) !important;
+    color: {C['t1']} !important;
     border: 1px solid {C['border']} !important;
-    border-radius: 8px !important;
-    font-size: 0.82rem !important;
-    font-weight: 500 !important;
-    padding: 6px 14px !important;
-    transition: all .2s !important;
+    border-radius: 12px !important;
+    font-size: 0.86rem !important;
+    font-weight: 600 !important;
+    padding: 8px 14px !important;
+    transition: all .18s ease !important;
+    min-height: 44px !important;
+    white-space: nowrap !important;
+    line-height: 1.1 !important;
 }}
 .stButton > button:hover {{
+    transform: translateY(-1px);
     border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
-    background: {C['blue_d']} !important;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.14) !important;
 }}
 .stButton > button[kind="primary"] {{
-    background: {C['blue_d']} !important;
-    border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(167,139,250,0.22)) !important;
+    border-color: rgba(125,211,252,0.48) !important;
+    color: #eaf6ff !important;
 }}
 
 /* inputs */
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input,
 .stSelectbox > div > div {{
-    background: {C['card']} !important;
-    border-color: {C['border']} !important;
+    background: rgba(15, 23, 42, 0.78) !important;
+    border: 1px solid {C['border']} !important;
     color: {C['t1']} !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
+}}
+.stSelectbox [data-baseweb="select"] {{
+    min-width: 160px !important;
 }}
 
 /* tabs */
 .stTabs [data-baseweb="tab-list"] {{
-    background: transparent;
-    border-bottom: 1px solid {C['border']};
+    background: rgba(15,23,42,0.35);
+    border: 1px solid {C['border']};
+    border-radius: 12px;
     gap: 4px;
+    padding: 4px;
 }}
 .stTabs [data-baseweb="tab"] {{
     background: transparent !important;
     color: {C['t2']} !important;
-    border: none !important;
-    border-radius: 8px 8px 0 0 !important;
-    font-weight: 500 !important;
-    font-size: 0.85rem !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.83rem !important;
 }}
 .stTabs [aria-selected="true"] {{
-    background: {C['blue_d']} !important;
-    color: {C['blue']} !important;
-    border-bottom: 2px solid {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.24), rgba(167,139,250,0.20)) !important;
+    color: #dff4ff !important;
 }}
 
 /* metric */
@@ -134,35 +159,33 @@ st.markdown(f"""
 [data-testid="stMetricLabel"] {{ color: {C['t2']} !important; font-size: 0.78rem !important; }}
 
 /* divider */
-hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
+hr {{ border-color: rgba(148,163,184,0.2) !important; margin: 0.9rem 0 !important; }}
 
 /* expander */
-.streamlit-expanderHeader {{ color: {C['t1']} !important; background: {C['card']} !important; border-radius: 8px !important; }}
-.streamlit-expanderContent {{ background: {C['bg2']} !important; border-radius: 0 0 8px 8px !important; }}
+.streamlit-expanderHeader {{
+    color: {C['t1']} !important;
+    background: rgba(15, 23, 42, 0.7) !important;
+    border: 1px solid {C['border']} !important;
+    border-radius: 12px !important;
+}}
+.streamlit-expanderContent {{ background: transparent !important; border-radius: 0 0 12px 12px !important; }}
 
 /* scrollbar */
-::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-::-webkit-scrollbar-track {{ background: {C['bg2']}; }}
-::-webkit-scrollbar-thumb {{ background: {C['border2']}; border-radius: 3px; }}
+::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+::-webkit-scrollbar-track {{ background: rgba(15,23,42,0.7); }}
+::-webkit-scrollbar-thumb {{ background: rgba(100,116,139,0.55); border-radius: 6px; }}
 
 /* hide streamlit chrome */
 #MainMenu, footer, header {{ visibility: hidden; }}
-.block-container {{ padding-top: 1rem !important; }}
+.block-container {{ padding-top: 0.7rem !important; max-width: 1500px; }}
 
-/* card helpers used in markdown */
-.fa-card {{
-    background: {C['card']};
-    border: 1px solid {C['border']};
-    border-radius: 14px;
-    padding: 20px 22px;
-    margin-bottom: 12px;
-}}
+/* badges/text helpers */
 .fa-pill {{
     display: inline-block;
     padding: 3px 10px;
     border-radius: 20px;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     margin: 2px;
 }}
 .g {{ color: {C['green']}; font-weight: 700; }}
@@ -170,21 +193,22 @@ hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
 .b {{ color: {C['blue']}; font-weight: 700; }}
 .mono {{ font-family: 'JetBrains Mono', monospace; }}
 .grad {{
-    background: linear-gradient(135deg, {C['blue']}, {C['purple']});
+    background: linear-gradient(135deg, #7dd3fc 0%, #a78bfa 45%, #22d3ee 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
     font-weight: 800;
+    letter-spacing: 0.01em;
 }}
 .status-dot {{
-    display: inline-block; width: 7px; height: 7px;
+    display: inline-block; width: 8px; height: 8px;
     border-radius: 50%; background: {C['green']};
-    box-shadow: 0 0 8px {C['green']};
-    animation: pulse 2s infinite;
+    box-shadow: 0 0 10px {C['green']};
+    animation: pulse 1.8s infinite;
 }}
 @keyframes pulse {{
     0%,100% {{ opacity:1; transform:scale(1); }}
-    50% {{ opacity:.6; transform:scale(1.3); }}
+    50% {{ opacity:.6; transform:scale(1.35); }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -198,18 +222,61 @@ def load_data() -> dict:
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE) as f:
-                return json.load(f)
+                return ensure_data_schema(json.load(f))
         except Exception:
             pass
-    return {
+    return ensure_data_schema({
         "watchlist": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"],
         "portfolio": {},
         "alerts": [],
-    }
+        "preferences": {
+            "debug_mode": False,
+            "language": "CZ",
+        },
+    })
 
 def save_data(d: dict):
     with open(DATA_FILE, "w") as f:
         json.dump(d, f, indent=2)
+
+def ensure_data_schema(d: dict) -> dict:
+    """Backfill missing keys to keep backwards compatibility."""
+    if not isinstance(d, dict):
+        return load_data()
+    d.setdefault("watchlist", ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"])
+    d.setdefault("portfolio", {})
+    d.setdefault("alerts", [])
+    prefs = d.get("preferences", {})
+    if not isinstance(prefs, dict):
+        prefs = {}
+    prefs.setdefault("debug_mode", False)
+    prefs.setdefault("language", "CZ")
+    d["preferences"] = prefs
+    return d
+
+def is_debug_mode() -> bool:
+    data = ensure_data_schema(load_data())
+    return bool(data.get("preferences", {}).get("debug_mode", False))
+
+def log_debug(message: str):
+    if is_debug_mode():
+        st.info(f"🧪 DEBUG: {message}")
+
+def normalized_ticker_input(
+    label: str,
+    key: str,
+    default: str = "AAPL",
+    placeholder: str = "",
+    label_visibility: str = "visible",
+) -> str:
+    raw_key = f"{key}_raw"
+    if raw_key not in st.session_state:
+        st.session_state[raw_key] = st.session_state.get(key, default)
+    raw = st.text_input(label, key=raw_key, placeholder=placeholder, label_visibility=label_visibility)
+    clean = sanitize_ticker_input(raw, default=default)
+    if st.session_state.get(key) != clean:
+        st.session_state[key] = clean
+    return clean
 
 # ─────────────────────────────────────────────
 #  DATA ENGINE  (cached)
@@ -221,7 +288,8 @@ def fetch_stock(ticker: str, period: str = "1y", interval: str = "1d"):
         df = s.history(period=period, interval=interval, auto_adjust=True)
         info = s.info or {}
         return df, info
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_stock failed for {ticker}: {e}")
         return None, {}
 
 @st.cache_data(ttl=300)
@@ -245,8 +313,43 @@ def fetch_multi(tickers: list) -> dict:
                 "sector": info.get("sector", "N/A"),
                 "pe": info.get("trailingPE", None),
             }
-        except Exception:
+        except Exception as e:
+            log_debug(f"fetch_multi failed for {t}: {e}")
             continue
+    return out
+
+@st.cache_data(ttl=900)
+def fetch_market_regime() -> dict:
+    """Quick market regime snapshot using liquid macro proxies."""
+    proxies = {
+        "SPY": "SPY",
+        "QQQ": "QQQ",
+        "IWM": "IWM",
+        "TLT": "TLT",
+        "VIX": "^VIX",
+    }
+    out = {}
+    for k, sym in proxies.items():
+        try:
+            h = yf.Ticker(sym).history(period="3mo")
+            if h is None or h.empty or len(h) < 22:
+                continue
+            last = float(h["Close"].iloc[-1])
+            chg_1d = (last / float(h["Close"].iloc[-2]) - 1) * 100
+            chg_1m = (last / float(h["Close"].iloc[-22]) - 1) * 100
+            out[k] = {"last": last, "d1": chg_1d, "m1": chg_1m}
+        except Exception as e:
+            log_debug(f"fetch_market_regime failed for {sym}: {e}")
+    if not out:
+        return {}
+    risk_on_score = 0
+    risk_on_score += 1 if out.get("SPY", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("QQQ", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("IWM", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("VIX", {}).get("m1", 1) < 0 else 0
+    regime = "RISK-ON" if risk_on_score >= 3 else "NEUTRAL" if risk_on_score == 2 else "RISK-OFF"
+    out["regime"] = regime
+    out["score"] = risk_on_score
     return out
 
 @st.cache_data(ttl=600)
@@ -277,7 +380,8 @@ def fetch_news(ticker: str) -> list:
             else:
                 normalized.append(n)
         return normalized
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_news failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -335,7 +439,8 @@ def fetch_insider_sec(ticker: str) -> list:
                     break
 
         return trades
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_insider_sec failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -362,7 +467,59 @@ def fetch_analyst_info(ticker: str) -> dict:
             "num_analysts": info.get("numberOfAnalystOpinions", 0),
             "rec_summary": rec_summary,
         }
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_analyst_info failed for {ticker}: {e}")
+        return {}
+
+@st.cache_data(ttl=900)
+def fetch_options_snapshot(ticker: str) -> dict:
+    """Return nearest-expiry options sentiment summary."""
+    try:
+        tk = yf.Ticker(ticker)
+        expiries = tk.options or []
+        if not expiries:
+            return {}
+        expiry = expiries[0]
+        chain = tk.option_chain(expiry)
+        calls = chain.calls.copy() if chain and chain.calls is not None else pd.DataFrame()
+        puts  = chain.puts.copy() if chain and chain.puts is not None else pd.DataFrame()
+        if calls.empty and puts.empty:
+            return {}
+
+        call_oi = float(calls["openInterest"].fillna(0).sum()) if "openInterest" in calls.columns else 0.0
+        put_oi  = float(puts["openInterest"].fillna(0).sum())  if "openInterest" in puts.columns else 0.0
+        call_vol = float(calls["volume"].fillna(0).sum()) if "volume" in calls.columns else 0.0
+        put_vol  = float(puts["volume"].fillna(0).sum())  if "volume" in puts.columns else 0.0
+        pcr_oi = (put_oi / call_oi) if call_oi > 0 else np.nan
+        pcr_vol = (put_vol / call_vol) if call_vol > 0 else np.nan
+
+        spot = float(tk.history(period="5d")["Close"].iloc[-1])
+        strikes = sorted(set(calls.get("strike", pd.Series(dtype=float)).dropna().tolist()) |
+                         set(puts.get("strike", pd.Series(dtype=float)).dropna().tolist()))
+        max_pain = None
+        if strikes:
+            pain_scores = []
+            for k in strikes:
+                call_pain = ((calls["strike"] - k).clip(lower=0) * calls["openInterest"]).sum() if not calls.empty else 0
+                put_pain  = ((k - puts["strike"]).clip(lower=0) * puts["openInterest"]).sum() if not puts.empty else 0
+                pain_scores.append((k, float(call_pain + put_pain)))
+            max_pain = min(pain_scores, key=lambda x: x[1])[0] if pain_scores else None
+
+        return {
+            "expiry": expiry,
+            "spot": spot,
+            "call_oi": call_oi,
+            "put_oi": put_oi,
+            "call_vol": call_vol,
+            "put_vol": put_vol,
+            "pcr_oi": pcr_oi,
+            "pcr_vol": pcr_vol,
+            "max_pain": max_pain,
+            "calls_top_oi": calls.nlargest(8, "openInterest")[["strike", "openInterest", "volume"]] if not calls.empty else pd.DataFrame(),
+            "puts_top_oi": puts.nlargest(8, "openInterest")[["strike", "openInterest", "volume"]] if not puts.empty else pd.DataFrame(),
+        }
+    except Exception as e:
+        log_debug(f"fetch_options_snapshot failed for {ticker}: {e}")
         return {}
 
 # ─────────────────────────────────────────────
@@ -769,11 +926,16 @@ CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor ="rgba(0,0,0,0)",
     font=dict(color=C["t1"], family="Inter"),
-    margin=dict(l=10, r=10, t=30, b=10),
+    margin=dict(l=8, r=8, t=26, b=8),
     hovermode="x unified",
-    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"]),
+    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"], tickfont=dict(color=C["t2"])),
     yaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"],
                tickfont=dict(color=C["t2"])),
+    hoverlabel=dict(
+        bgcolor="rgba(15,23,42,0.92)",
+        bordercolor=C["border2"],
+        font=dict(color=C["t1"], size=12),
+    ),
 )
 
 # ─────────────────────────────────────────────
@@ -1013,19 +1175,19 @@ def mini_sparkline(values, color, height=55):
 # ─────────────────────────────────────────────
 PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Settings"]
 EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Settings":"⚙️"}
-CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty", "Settings"]
+CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty"]
 NAV_LABELS = {
     "Dashboard": "📊 Home",
     "Stock Detail": "🔍 Akcie",
-    "Portfolio": "💼 Portfolio",
+    "Portfolio": "💼 Portf.",
     "Screener": "🔎 Screener",
     "Makro": "🌍 Makro",
     "Alerty": "🔔 Alerty",
-    "Settings": "⚙️ Nastavení",
+    "Settings": "⚙️ Nastav.",
 }
 
 def render_header():
-    c1, c2, c3 = st.columns([2, 6, 2])
+    c1, c2, c3 = st.columns([2, 7, 3])
     with c1:
         st.markdown(f"""
             <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
@@ -1048,9 +1210,9 @@ def render_header():
                     st.session_state["page"] = page
                     st.rerun()
         with cols[-1]:
-            adv_default = "Více…"
+            adv_default = "Další…"
             adv_choice = st.selectbox(
-                "",
+                "Další stránky",
                 [adv_default] + advanced_pages,
                 index=0,
                 key="nav_more_select",
@@ -1072,7 +1234,6 @@ def render_header():
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
-            st.session_state["header_ticker_input"] = ticker
             st.session_state["page"] = "Stock Detail"
             st.rerun()
 
@@ -1081,6 +1242,17 @@ def render_header():
 # ─────────────────────────────────────────────
 def page_dashboard():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📊 Market Dashboard</h2>", unsafe_allow_html=True)
+    regime = fetch_market_regime()
+    if regime:
+        reg_col = C["green"] if regime.get("regime") == "RISK-ON" else C["orange"] if regime.get("regime") == "NEUTRAL" else C["red"]
+        r1, r2, r3, r4, r5, r6 = st.columns(6)
+        with r1: st.metric("Market režim", regime.get("regime", "N/A"))
+        with r2: st.metric("Risk score", f"{regime.get('score', 0)}/4")
+        with r3: st.metric("SPY 1M", f"{regime.get('SPY', {}).get('m1', 0):+.1f}%")
+        with r4: st.metric("QQQ 1M", f"{regime.get('QQQ', {}).get('m1', 0):+.1f}%")
+        with r5: st.metric("IWM 1M", f"{regime.get('IWM', {}).get('m1', 0):+.1f}%")
+        with r6: st.metric("VIX 1M", f"{regime.get('VIX', {}).get('m1', 0):+.1f}%")
+        st.markdown(f"<div style='height:3px;border-radius:10px;background:{with_alpha(reg_col,0.55)};margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     # ── Market indices ─────────────────────
     indices = {"S&P 500":"^GSPC","NASDAQ":"^IXIC","DOW":"^DJI","VIX":"^VIX","Russell":"^RUT"}
@@ -1292,7 +1464,7 @@ def page_stock_detail():
     st.markdown("---")
 
     # ── Tabs ──────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Pro Invest"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Instituce & Opce"])
 
     # ── TAB 1: Chart ──────────────────────
     with tab1:
@@ -1817,9 +1989,47 @@ def page_stock_detail():
                     </div>
                 """, unsafe_allow_html=True)
 
-    # ── TAB 9: Pro Invest ─────────────────
+    # ── TAB 9: Institutional + Options ─────────────────
     with tab9:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Profesionální přehled pro retail i institucionální workflow: risk engine, investiční memo a export.</div>", unsafe_allow_html=True)
+        st.caption("Reálná doplňková data: institucionální vlastnictví, short interest a snapshot opcí.")
+
+        i1, i2, i3, i4 = st.columns(4)
+        with i1:
+            inst = info.get("heldPercentInstitutions", None)
+            st.metric("Instituce drží", f"{inst*100:.1f}%" if isinstance(inst, (int, float)) else "N/A")
+        with i2:
+            insiders_h = info.get("heldPercentInsiders", None)
+            st.metric("Insideři drží", f"{insiders_h*100:.1f}%" if isinstance(insiders_h, (int, float)) else "N/A")
+        with i3:
+            short_ratio = info.get("shortRatio", None)
+            st.metric("Short ratio", f"{short_ratio:.2f}" if isinstance(short_ratio, (int, float)) else "N/A")
+        with i4:
+            short_pct = info.get("shortPercentOfFloat", None)
+            st.metric("Short % float", f"{short_pct*100:.1f}%" if isinstance(short_pct, (int, float)) else "N/A")
+
+        st.markdown("---")
+        opt = fetch_options_snapshot(ticker)
+        if not opt:
+            st.info("Opční data nejsou pro tento ticker dostupná.")
+        else:
+            op1, op2, op3, op4, op5 = st.columns(5)
+            with op1: st.metric("Expirace", opt["expiry"])
+            with op2: st.metric("Spot", f"${opt['spot']:.2f}")
+            with op3: st.metric("Put/Call OI", f"{opt['pcr_oi']:.2f}" if pd.notna(opt["pcr_oi"]) else "N/A")
+            with op4: st.metric("Put/Call Vol", f"{opt['pcr_vol']:.2f}" if pd.notna(opt["pcr_vol"]) else "N/A")
+            with op5: st.metric("Max pain", f"${opt['max_pain']:.2f}" if opt.get("max_pain") else "N/A")
+
+            c_oi = opt.get("calls_top_oi", pd.DataFrame()).copy()
+            p_oi = opt.get("puts_top_oi", pd.DataFrame()).copy()
+            oc1, oc2 = st.columns(2)
+            with oc1:
+                st.markdown("**Top call strikes (OI)**")
+                st.dataframe(c_oi, use_container_width=True, hide_index=True)
+            with oc2:
+                st.markdown("**Top put strikes (OI)**")
+                st.dataframe(p_oi, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
         if not risk_pack:
             st.info("Risk engine nemá dostatek dat.")
         else:
@@ -1830,34 +2040,19 @@ def page_stock_detail():
             with rc4: st.metric("Risk Score", f"{risk_pack['risk_score']:.0f}/100")
             if risk_pack.get("beta") is not None:
                 st.caption(f"Beta vs trh: {risk_pack['beta']:.2f}")
-
-        memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
-        st.markdown(f"""
-            <div class="fa-card" style="border-color:{C['blue']}30;">
-                <div style="font-size:.78rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.05em;">Investment Memo (auto-generated)</div>
-                <div style="font-size:1.1rem;font-weight:700;color:{C['t1']};margin-top:4px;">{memo['company']} ({memo['ticker']})</div>
-                <div style="font-size:.92rem;color:{C['blue']};font-weight:600;margin-top:8px;">Teze: {memo['thesis']}</div>
-                <div style="font-size:.82rem;color:{C['t2']};margin-top:8px;">
-                    Fair Value: {f"${memo['fair_value']:.2f}" if memo.get('fair_value') else "N/A"} ·
-                    Cena: {f"${memo['current_price']:.2f}" if memo.get('current_price') else "N/A"} ·
-                    Upside: {f"{memo['upside_pct']:+.1f}%" if memo.get('upside_pct') is not None else "N/A"} ·
-                    Buy Score: {memo.get('buy_score') if memo.get('buy_score') is not None else "N/A"} ·
-                    Risk Score: {f"{memo['risk_score']:.0f}" if memo.get('risk_score') is not None else "N/A"}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("**Klíčová rizika (checklist)**")
-        for r in memo.get("key_risks", []):
-            st.markdown(f"- {r}")
-
-        st.download_button(
-            "⬇️ Stáhnout Investment Memo (JSON)",
-            data=json.dumps(memo, indent=2, ensure_ascii=False),
-            file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
-            mime="application/json",
-            use_container_width=True,
-        )
+        with st.expander("🧾 Investment memo (volitelné)", expanded=False):
+            memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
+            st.write(f"**Teze:** {memo['thesis']}")
+            st.write("**Klíčová rizika:**")
+            for r in memo.get("key_risks", []):
+                st.write(f"- {r}")
+            st.download_button(
+                "⬇️ Stáhnout Investment Memo (JSON)",
+                data=json.dumps(memo, indent=2, ensure_ascii=False),
+                file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 def page_portfolio():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>💼 Portfolio</h2>", unsafe_allow_html=True)
@@ -1867,7 +2062,7 @@ def page_portfolio():
     # Add position
     with st.expander("➕ Přidat / upravit pozici", expanded=len(portfolio)==0):
         pc1,pc2,pc3,pc4 = st.columns(4)
-        with pc1: p_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+        with pc1: p_ticker = normalized_ticker_input("Ticker", key="portfolio_ticker", default=st.session_state.get("ticker", "AAPL"), placeholder="AAPL")
         with pc2: p_shares = st.number_input("Počet akcií", min_value=0.001, value=10.0, step=1.0)
         with pc3: p_cost   = st.number_input("Průměrná cena ($)", min_value=0.01, value=100.0, step=0.01)
         with pc4: p_sector = st.selectbox("Sektor", ["Technology","Healthcare","Finance","Energy","Consumer","Industrial","Real Estate","Other"])
@@ -2121,7 +2316,7 @@ def page_charts():
     ticker = st.session_state.get("ticker","AAPL")
 
     cc1,cc2,cc3 = st.columns([2,1,1])
-    with cc1: chart_ticker = st.text_input("Symbol", value=ticker, label_visibility="collapsed").upper().strip()
+    with cc1: chart_ticker = normalized_ticker_input("Symbol", key="charts_symbol", default=ticker, placeholder="AAPL", label_visibility="collapsed")
     with cc2: chart_type   = st.selectbox("Typ grafu", ["Candlestick","Line","Area","OHLC"], label_visibility="collapsed")
     with cc3: period_sel   = st.selectbox("Období", ["1mo","3mo","6mo","1y","2y","5y","max"], index=3, label_visibility="collapsed")
 
@@ -2325,7 +2520,7 @@ def page_insider():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>👤 Insider Trades — SEC EDGAR</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Reálné Form-4 záznamy ze SEC EDGAR (data.sec.gov). Pouze US akcie kótované na NYSE/NASDAQ.</div>", unsafe_allow_html=True)
 
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="insider_ticker", default=st.session_state.get("ticker","AAPL"), placeholder="AAPL")
     if st.button("🔍 Načíst insider data", use_container_width=True):
         st.session_state["ticker"] = ticker
         with st.spinner("Přistupuji k SEC EDGAR…"):
@@ -2382,7 +2577,7 @@ def page_insider():
 # ─────────────────────────────────────────────
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
 
     if st.button("📅 Načíst earnings data", use_container_width=True):
         st.session_state["ticker"] = ticker
@@ -2484,7 +2679,7 @@ def page_alerts():
     with st.expander("➕ Přidat alert", expanded=True):
         ac1,ac2,ac3,ac4 = st.columns(4)
         with ac1:
-            a_ticker = st.text_input("Ticker", value=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL"))).upper().strip()
+            a_ticker = normalized_ticker_input("Ticker", key="alerts_ticker", default=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL")))
         with ac2:
             a_type = st.selectbox("Typ alertu", ["Cena překročí", "Cena klesne pod", "Buy Score překročí", "Buy Score klesne pod"])
         with ac3:
@@ -2699,7 +2894,20 @@ def page_screener():
 # ─────────────────────────────────────────────
 def page_settings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>⚙️ Nastavení</h2>", unsafe_allow_html=True)
-    data = load_data()
+    data = ensure_data_schema(load_data())
+
+    st.subheader("🧭 Preference")
+    pref1, pref2 = st.columns(2)
+    prefs = data.get("preferences", {})
+    with pref1:
+        debug_mode = st.toggle("Debug mód (zobrazit technické chyby)", value=bool(prefs.get("debug_mode", False)))
+    with pref2:
+        language = st.selectbox("Jazyk UI", ["CZ", "EN"], index=0 if prefs.get("language", "CZ") == "CZ" else 1)
+    if debug_mode != bool(prefs.get("debug_mode", False)) or language != prefs.get("language", "CZ"):
+        data["preferences"]["debug_mode"] = debug_mode
+        data["preferences"]["language"] = language
+        save_data(data)
+        st.success("Preference uloženy.")
 
     st.subheader("⭐ Watchlist")
     wl = data.get("watchlist", [])
@@ -2707,7 +2915,7 @@ def page_settings():
 
     wc1, wc2 = st.columns(2)
     with wc1:
-        new_sym = st.text_input("Přidat symbol", placeholder="např. GOOG").upper().strip()
+        new_sym = normalized_ticker_input("Přidat symbol", key="settings_new_symbol", default="", placeholder="např. GOOG")
         if st.button("➕ Přidat"):
             if new_sym and new_sym not in wl:
                 wl.append(new_sym)
@@ -2748,6 +2956,20 @@ def page_settings():
                        "application/json")
 
     st.markdown("---")
+    st.subheader("📥 Import")
+    uploaded = st.file_uploader("Nahrát zálohu (JSON)", type=["json"])
+    if uploaded is not None:
+        try:
+            imported = json.load(uploaded)
+            imported = ensure_data_schema(imported)
+            save_data(imported)
+            st.success("Data byla úspěšně importována.")
+            st.rerun()
+        except Exception as e:
+            st.error("Import se nezdařil. Zkontroluj prosím formát souboru.")
+            log_debug(f"Import failed: {e}")
+
+    st.markdown("---")
     st.markdown(f"""
         <div style="font-size:.78rem;color:{C['t3']};line-height:1.8;">
         <b style="color:{C['t2']};">Datové zdroje:</b><br>
@@ -2772,7 +2994,7 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(url, headers=headers, timeout=(2.0, 4.0))
         r.raise_for_status()
         df = pd.read_csv(StringIO(r.text))
         if df.empty:
@@ -2793,7 +3015,7 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
 
 @st.cache_data(ttl=1800)
 def fetch_macro_snapshot() -> dict:
-    """Pull key macro indicators from FRED."""
+    """Pull key macro indicators from FRED quickly (parallel + short timeouts)."""
     ids = {
         "CPI (YoY %)":        "CPIAUCSL",
         "Core CPI (YoY %)":   "CPILFESL",
@@ -2809,45 +3031,80 @@ def fetch_macro_snapshot() -> dict:
         "VIX":                "VIXCLS",
     }
     result = {}
-    for label, sid in ids.items():
-        try:
-            s = fetch_fred_series(sid, 3)
-            if len(s) >= 2:
-                cur_val  = s.iloc[-1]
-                prev_val = s.iloc[-2]
-                result[label] = {
-                    "value":  cur_val,
-                    "prev":   prev_val,
-                    "change": cur_val - prev_val,
-                    "date":   str(s.index[-1].date()),
-                    "series": s,
-                }
-        except Exception:
-            continue
+    with cf.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(fetch_fred_series, sid, 3): label for label, sid in ids.items()}
+        for fut in cf.as_completed(futures):
+            label = futures[fut]
+            try:
+                s = fut.result(timeout=6)
+                if len(s) >= 2:
+                    cur_val = s.iloc[-1]
+                    prev_val = s.iloc[-2]
+                    result[label] = {
+                        "value": cur_val,
+                        "prev": prev_val,
+                        "change": cur_val - prev_val,
+                        "date": str(s.index[-1].date()),
+                        "series": s,
+                    }
+            except Exception as e:
+                log_debug(f"macro series failed ({label}): {e}")
     return result
 
-def _sector_macro_impact() -> list:
-    """Returns a static impact matrix: macro event → sector impact."""
-    return [
-        {"event": "CPI vyšší než očekáváno",   "Tech": -2.1, "Finance": +1.5, "Energy": +1.2, "Consumer": -1.8, "Healthcare": -0.5, "Real Estate": -2.4},
-        {"event": "CPI nižší než očekáváno",    "Tech": +2.3, "Finance": -0.8, "Energy": -0.9, "Consumer": +1.5, "Healthcare": +0.7, "Real Estate": +2.1},
-        {"event": "Fed zvyšuje sazby",           "Tech": -2.8, "Finance": +1.8, "Energy": +0.4, "Consumer": -1.5, "Healthcare": -0.6, "Real Estate": -3.1},
-        {"event": "Fed snižuje sazby",           "Tech": +3.2, "Finance": -1.2, "Energy": -0.3, "Consumer": +2.1, "Healthcare": +1.1, "Real Estate": +3.5},
-        {"event": "NFP (Jobs) silný",            "Tech": +0.8, "Finance": +1.2, "Energy": +0.6, "Consumer": +1.8, "Healthcare": +0.3, "Real Estate": -0.5},
-        {"event": "NFP (Jobs) slabý",            "Tech": -0.9, "Finance": -1.4, "Energy": -0.7, "Consumer": -2.1, "Healthcare": +0.2, "Real Estate": +0.3},
-        {"event": "GDP silný",                   "Tech": +1.5, "Finance": +1.8, "Energy": +1.1, "Consumer": +2.2, "Healthcare": +0.4, "Real Estate": +0.8},
-        {"event": "GDP slabý / recese",          "Tech": -1.8, "Finance": -2.5, "Energy": -1.3, "Consumer": -3.1, "Healthcare": +1.5, "Real Estate": -1.9},
-        {"event": "USD sílí (DXY +)",            "Tech": -1.2, "Finance": +0.6, "Energy": -1.5, "Consumer": -0.8, "Healthcare": -0.3, "Real Estate": -0.6},
-        {"event": "10Y výnosy stoupají",         "Tech": -2.5, "Finance": +2.1, "Energy": +0.8, "Consumer": -1.1, "Healthcare": -0.9, "Real Estate": -2.8},
-        {"event": "ISM Manufacturing silný",     "Tech": +1.1, "Finance": +0.8, "Energy": +1.4, "Consumer": +0.9, "Healthcare": +0.2, "Real Estate": +0.4},
-        {"event": "Obchodní válka / cla +",      "Tech": -3.1, "Finance": -1.5, "Energy": -0.8, "Consumer": -2.8, "Healthcare": -0.4, "Real Estate": -0.5},
-    ]
+@st.cache_data(ttl=3600)
+def compute_sector_macro_corr(period: str = "1y") -> pd.DataFrame:
+    """Rolling relevance matrix based on real historical correlations."""
+    sector_map = {
+        "Tech (XLK)": "XLK",
+        "Finance (XLF)": "XLF",
+        "Energy (XLE)": "XLE",
+        "Consumer (XLY)": "XLY",
+        "Healthcare (XLV)": "XLV",
+        "Real Estate (XLRE)": "XLRE",
+    }
+    macro_map = {
+        "S&P 500 (^GSPC)": "^GSPC",
+        "DXY (DX-Y.NYB)": "DX-Y.NYB",
+        "VIX (^VIX)": "^VIX",
+        "10Y Yield (^TNX)": "^TNX",
+    }
+    prices = {}
+    for label, sym in {**sector_map, **macro_map}.items():
+        try:
+            h = yf.Ticker(sym).history(period=period)["Close"]
+            if h is not None and not h.empty:
+                prices[label] = h
+        except Exception as e:
+            log_debug(f"compute_sector_macro_corr failed for {sym}: {e}")
+    if len(prices) < 5:
+        return pd.DataFrame()
+    px = pd.DataFrame(prices).dropna(how="all").ffill().dropna()
+    if px.empty:
+        return pd.DataFrame()
+    rets = px.pct_change().dropna()
+    if rets.empty:
+        return pd.DataFrame()
+    sector_cols = [c for c in sector_map if c in rets.columns]
+    macro_cols = [c for c in macro_map if c in rets.columns]
+    if not sector_cols or not macro_cols:
+        return pd.DataFrame()
+    mat = pd.DataFrame(index=sector_cols, columns=macro_cols, dtype=float)
+    for s in sector_cols:
+        for m in macro_cols:
+            mat.loc[s, m] = rets[s].corr(rets[m])
+    return mat
 
 def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Live makro data z FRED (Federal Reserve). Pochopit makro = pochopit, kam půjde trh.</div>", unsafe_allow_html=True)
 
-    tab_live, tab_charts, tab_matrix, tab_yield = st.tabs(["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor Impact Matrix", "📐 Yield Curve"])
+    tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs([
+        "📊 Live indikátory",
+        "📈 Grafy trendů",
+        "🎯 Sektor × Makro korelace",
+        "📐 Yield Curve",
+        "📅 Economic Calendar",
+    ])
 
     # ── TAB 1: Live snapshot ──────────────────
     with tab_live:
@@ -2938,42 +3195,34 @@ def page_makro():
                                 tickfont=dict(color=C["t3"]), showgrid=False)
             st.plotly_chart(mc_fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ── TAB 3: Sector Impact Matrix ───────────
+    # ── TAB 3: Sector x Macro Correlation Matrix ───────────
     with tab_matrix:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Průměrná historická reakce sektorů na makro události. Pomáhá rozhodovat, jak přesunout portfolio před/po zveřejnění dat.</div>", unsafe_allow_html=True)
-        impact_data = _sector_macro_impact()
-        sectors = ["Tech", "Finance", "Energy", "Consumer", "Healthcare", "Real Estate"]
-        events  = [d["event"] for d in impact_data]
-        z_vals  = [[d[s] for s in sectors] for d in impact_data]
-        text_vals = [[f"{v:+.1f}%" for v in row] for row in z_vals]
-
-        heat_fig = go.Figure(go.Heatmap(
-            z=z_vals, x=sectors, y=events,
-            text=text_vals, texttemplate="%{text}",
-            colorscale=[
-                [0.0,  "#ff3d5a"],
-                [0.45, "#1a1a22"],
-                [0.55, "#1a1a22"],
-                [1.0,  "#00e676"],
-            ],
-            zmin=-4, zmax=4,
-            showscale=True,
-            colorbar=dict(tickfont=dict(color=C["t2"]),
-                          title=dict(text="% dopad", font=dict(color=C["t2"]))),
-        ))
-        heat_fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            height=520, margin=dict(l=10, r=10, t=10, b=10),
-            font=dict(color=C["t1"]),
-            xaxis=dict(tickfont=dict(color=C["t2"])),
-            yaxis=dict(tickfont=dict(color=C["t2"]), autorange="reversed"),
-        )
-        st.plotly_chart(heat_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"""
-            <div style="padding:8px 14px;background:{C['bg2']};border-radius:8px;font-size:.75rem;color:{C['t3']};margin-top:6px;">
-            ⚠️ Hodnoty jsou průměrné historické reakce z dat 2010–2024. Minulé reakce nezaručují budoucí výsledky. Používej jako orientaci, ne jako přesnou předpověď.
-            </div>
-        """, unsafe_allow_html=True)
+        st.caption("Korelace denních výnosů sektorových ETF proti hlavním makro faktorům (reálná data, nikoli statické odhady).")
+        corr_period = st.selectbox("Období korelací", ["6mo", "1y", "2y", "5y"], index=1, key="macro_corr_period")
+        corr = compute_sector_macro_corr(corr_period)
+        if corr.empty:
+            st.info("Korelační data nejsou momentálně dostupná.")
+        else:
+            z_vals = corr.values
+            text_vals = [[f"{v:+.2f}" for v in row] for row in z_vals]
+            heat_fig = go.Figure(go.Heatmap(
+                z=z_vals, x=list(corr.columns), y=list(corr.index),
+                text=text_vals, texttemplate="%{text}",
+                colorscale="RdBu",
+                zmin=-1, zmax=1,
+                showscale=True,
+                colorbar=dict(tickfont=dict(color=C["t2"]),
+                              title=dict(text="Korelace", font=dict(color=C["t2"]))),
+            ))
+            heat_fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                height=420, margin=dict(l=10, r=10, t=10, b=10),
+                font=dict(color=C["t1"]),
+                xaxis=dict(tickfont=dict(color=C["t2"])),
+                yaxis=dict(tickfont=dict(color=C["t2"]), autorange="reversed"),
+            )
+            st.plotly_chart(heat_fig, use_container_width=True, config={"displayModeBar": False})
+            st.caption("Korelace ≠ kauzalita. V režimu risk-off se vztahy mohou rychle měnit.")
 
     # ── TAB 4: Yield Curve ────────────────────
     with tab_yield:
@@ -3021,6 +3270,23 @@ def page_makro():
                             <div style="font-size:.7rem;color:{C['t3']};margin-top:2px;">{'Inverzní ⚠️' if val<0 else 'Normální ✅'}</div>
                         </div>
                     """, unsafe_allow_html=True)
+
+    # ── TAB 5: Investing.com Economic Calendar ─────────────
+    with tab_calendar:
+        st.caption("Události z Investing.com ekonomického kalendáře (USA).")
+        st.markdown("[Otevřít plný kalendář](https://www.investing.com/economic-calendar/)")
+        components.html(
+            '''
+            <iframe
+                src="https://sslecal2.forexprostools.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=1,2,3&features=datepicker,timezone,timeselector,filters&countries=5&calType=day&timeZone=55&lang=1"
+                width="100%"
+                height="690"
+                frameborder="0"
+                style="border:1px solid rgba(148,163,184,0.25);border-radius:12px;background:#0f172a;">
+            </iframe>
+            ''',
+            height=710,
+        )
 
 
 # ─────────────────────────────────────────────
@@ -3123,7 +3389,7 @@ def page_backtesting():
 
     bc1, bc2, bc3, bc4 = st.columns(4)
     with bc1:
-        bt_ticker = st.text_input("Ticker", value="AAPL").upper().strip()
+        bt_ticker = normalized_ticker_input("Ticker", key="bt_ticker", default="AAPL")
         bt_period = st.selectbox("Období", ["1y","2y","3y","5y","10y"], index=2)
     with bc2:
         strategy = st.selectbox("Strategie", ["SMA Crossover","EMA Crossover","RSI Mean Reversion","MACD Crossover"])
@@ -3277,7 +3543,7 @@ def page_monte_carlo():
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Simuluje tisíce možných cenových trajektorií na základě historické volatility. Vizualizuj riziko a pravděpodobnost ziskovosti.</div>", unsafe_allow_html=True)
 
     mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1: mc_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    with mc1: mc_ticker = normalized_ticker_input("Ticker", key="mc_ticker", default=st.session_state.get("ticker","AAPL"))
     with mc2: mc_sims   = st.select_slider("Počet simulací", options=[100, 500, 1000, 5000, 10000], value=1000)
     with mc3: mc_days   = st.slider("Horizont (dní)", 30, 365, 252)
     with mc4: mc_period = st.selectbox("Historická data (báze)", ["1y","2y","3y","5y"], index=1)
@@ -3484,11 +3750,12 @@ def compute_piotroski(info: dict, financials_df=None, balance_df=None) -> dict:
 def page_piotroski():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🏆 Piotroski F-Score + Fundamentální Screener</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Piotroski F-Score (0–9) měří kvalitu fundamentů. Score 8–9 = silný fundament. Kombinuje profitabilitu, zadluženost a provozní efektivitu.</div>", unsafe_allow_html=True)
+    st.caption("ℹ️ Některá kritéria používají proxy metriky (např. ROE vs ROA), pokud nejsou plná data dostupná.")
 
     tab_single, tab_screen = st.tabs(["🔍 Analýza jedné akcie", "📋 Batch screener"])
 
     with tab_single:
-        ps_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+        ps_ticker = normalized_ticker_input("Ticker", key="ps_ticker", default=st.session_state.get("ticker","AAPL"))
         if st.button("📊 Spočítat F-Score", use_container_width=True):
             with st.spinner(f"Načítám fundamenty pro {ps_ticker}…"):
                 _, ps_info = fetch_stock(ps_ticker, "1y")
@@ -3610,6 +3877,8 @@ def main():
     data = load_data()
     triggered = [a for a in data.get("alerts",[]) if not a.get("triggered")]
     # (full check happens in alerts page to avoid slowing every page load)
+    if triggered:
+        st.warning(f"🔔 Máš {len(triggered)} aktivních alertů ke kontrole v záložce Alerty.")
 
     page = st.session_state["page"]
     ROUTER = {
