@@ -3026,15 +3026,14 @@ def _fred_client():
     Build FRED client via fredapi + st.secrets key.
     Returns (client_or_none, error_message_or_none).
     """
-    api_key = None
-    try:
-        # Access guarded: st.secrets can raise StreamlitSecretNotFoundError
-        if "FRED_API_KEY" in st.secrets:
-            api_key = st.secrets["FRED_API_KEY"]
-    except Exception:
-        api_key = None
+    api_key = os.getenv("FRED_API_KEY", None)
     if not api_key:
-        api_key = os.getenv("FRED_API_KEY", None)
+        try:
+            # to_dict() is safer for optional lookup than direct indexing/get
+            sec = st.secrets.to_dict() if hasattr(st.secrets, "to_dict") else {}
+            api_key = sec.get("FRED_API_KEY", None)
+        except Exception:
+            api_key = None
     if not api_key:
         return None, "Chybí `FRED_API_KEY` v `st.secrets` (nebo v proměnné prostředí `FRED_API_KEY`)."
     try:
