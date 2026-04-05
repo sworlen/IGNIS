@@ -11,6 +11,7 @@ import os
 import requests
 import re
 import html
+import concurrent.futures as cf
 from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
@@ -3311,7 +3312,7 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
     try:
         url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(url, headers=headers, timeout=(2.0, 4.0))
         r.raise_for_status()
         df = pd.read_csv(StringIO(r.text))
         if df.empty:
@@ -3332,7 +3333,7 @@ def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
 
 @st.cache_data(ttl=1800)
 def fetch_macro_snapshot() -> dict:
-    """Pull key macro indicators from FRED."""
+    """Pull key macro indicators from FRED quickly (parallel + short timeouts)."""
     ids = {
         "CPI (YoY %)":        "CPIAUCSL",
         "Core CPI (YoY %)":   "CPILFESL",
@@ -3348,21 +3349,24 @@ def fetch_macro_snapshot() -> dict:
         "VIX":                "VIXCLS",
     }
     result = {}
-    for label, sid in ids.items():
-        try:
-            s = fetch_fred_series(sid, 3)
-            if len(s) >= 2:
-                cur_val  = s.iloc[-1]
-                prev_val = s.iloc[-2]
-                result[label] = {
-                    "value":  cur_val,
-                    "prev":   prev_val,
-                    "change": cur_val - prev_val,
-                    "date":   str(s.index[-1].date()),
-                    "series": s,
-                }
-        except Exception:
-            continue
+    with cf.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(fetch_fred_series, sid, 3): label for label, sid in ids.items()}
+        for fut in cf.as_completed(futures):
+            label = futures[fut]
+            try:
+                s = fut.result(timeout=6)
+                if len(s) >= 2:
+                    cur_val = s.iloc[-1]
+                    prev_val = s.iloc[-2]
+                    result[label] = {
+                        "value": cur_val,
+                        "prev": prev_val,
+                        "change": cur_val - prev_val,
+                        "date": str(s.index[-1].date()),
+                        "series": s,
+                    }
+            except Exception as e:
+                log_debug(f"macro series failed ({label}): {e}")
     return result
 
 @st.cache_data(ttl=3600)
