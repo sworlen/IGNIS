@@ -1,50 +1,51 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import json
 import os
-import requests
 import re
 import html
-from io import StringIO
 import warnings
 warnings.filterwarnings("ignore")
+import requests
 
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinAnalyzer Pro 11.0",
+    page_title="FinAnalyzer Pro 12.0",
     layout="wide",
     page_icon="◆",
     initial_sidebar_state="collapsed",
 )
 
 C = {
-    "bg":        "#0a0a0c",
-    "bg2":       "#101014",
-    "card":      "#16161c",
-    "border":    "rgba(255,255,255,0.07)",
-    "border2":   "rgba(255,255,255,0.14)",
-    "green":     "#00e676",
-    "green_d":   "rgba(0,230,118,0.12)",
-    "red":       "#ff3d5a",
-    "red_d":     "rgba(255,61,90,0.12)",
-    "blue":      "#00b4d8",
-    "blue_d":    "rgba(0,180,216,0.12)",
-    "purple":    "#7c3aed",
+    "bg":        "#070b14",
+    "bg2":       "#0d1526",
+    "card":      "rgba(18, 28, 46, 0.72)",
+    "border":    "rgba(125, 211, 252, 0.22)",
+    "border2":   "rgba(148, 163, 184, 0.28)",
+    "green":     "#22c55e",
+    "green_d":   "rgba(34,197,94,0.16)",
+    "red":       "#f43f5e",
+    "red_d":     "rgba(244,63,94,0.14)",
+    "blue":      "#38bdf8",
+    "blue_d":    "rgba(56,189,248,0.16)",
+    "purple":    "#a78bfa",
     "orange":    "#f59e0b",
-    "t1":        "#f0f0f5",
-    "t2":        "#9090aa",
-    "t3":        "#606075",
-    "grid":      "rgba(255,255,255,0.03)",
+    "t1":        "#e2e8f0",
+    "t2":        "#94a3b8",
+    "t3":        "#64748b",
+    "grid":      "rgba(148,163,184,0.10)",
 }
 
-APP_VERSION = "11.0"
+APP_VERSION = "12.0"
 
 def with_alpha(color: str, alpha: float) -> str:
     alpha = max(0.0, min(1.0, alpha))
@@ -75,58 +76,81 @@ st.markdown(f"""
 
 *, *::before, *::after {{ box-sizing: border-box; font-family: 'Inter', sans-serif; }}
 
-.stApp {{ background: {C['bg']}; color: {C['t1']}; }}
+.stApp {{
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgba(56,189,248,0.18), transparent 45%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(167,139,250,0.15), transparent 40%),
+      linear-gradient(180deg, #060a12 0%, #0a1221 55%, #0b1324 100%);
+    color: {C['t1']};
+}}
+
+/* Glass containers */
+.fa-card {{
+    background: {C['card']};
+    border: 1px solid {C['border']};
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(2, 8, 23, 0.35);
+}}
 
 /* buttons */
 .stButton > button {{
-    background: transparent !important;
-    color: {C['t2']} !important;
+    background: linear-gradient(180deg, rgba(30,41,59,0.7), rgba(15,23,42,0.7)) !important;
+    color: {C['t1']} !important;
     border: 1px solid {C['border']} !important;
-    border-radius: 8px !important;
-    font-size: 0.82rem !important;
-    font-weight: 500 !important;
-    padding: 6px 14px !important;
-    transition: all .2s !important;
+    border-radius: 12px !important;
+    font-size: 0.86rem !important;
+    font-weight: 600 !important;
+    padding: 8px 14px !important;
+    transition: all .18s ease !important;
+    min-height: 44px !important;
+    white-space: nowrap !important;
+    line-height: 1.1 !important;
 }}
 .stButton > button:hover {{
+    transform: translateY(-1px);
     border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
-    background: {C['blue_d']} !important;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.14) !important;
 }}
 .stButton > button[kind="primary"] {{
-    background: {C['blue_d']} !important;
-    border-color: {C['blue']} !important;
-    color: {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.25), rgba(167,139,250,0.22)) !important;
+    border-color: rgba(125,211,252,0.48) !important;
+    color: #eaf6ff !important;
 }}
 
 /* inputs */
 .stTextInput > div > div > input,
 .stNumberInput > div > div > input,
 .stSelectbox > div > div {{
-    background: {C['card']} !important;
-    border-color: {C['border']} !important;
+    background: rgba(15, 23, 42, 0.78) !important;
+    border: 1px solid {C['border']} !important;
     color: {C['t1']} !important;
-    border-radius: 8px !important;
+    border-radius: 12px !important;
+}}
+.stSelectbox [data-baseweb="select"] {{
+    min-width: 160px !important;
 }}
 
 /* tabs */
 .stTabs [data-baseweb="tab-list"] {{
-    background: transparent;
-    border-bottom: 1px solid {C['border']};
+    background: rgba(15,23,42,0.35);
+    border: 1px solid {C['border']};
+    border-radius: 12px;
     gap: 4px;
+    padding: 4px;
 }}
 .stTabs [data-baseweb="tab"] {{
     background: transparent !important;
     color: {C['t2']} !important;
-    border: none !important;
-    border-radius: 8px 8px 0 0 !important;
-    font-weight: 500 !important;
-    font-size: 0.85rem !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.83rem !important;
 }}
 .stTabs [aria-selected="true"] {{
-    background: {C['blue_d']} !important;
-    color: {C['blue']} !important;
-    border-bottom: 2px solid {C['blue']} !important;
+    background: linear-gradient(135deg, rgba(56,189,248,0.24), rgba(167,139,250,0.20)) !important;
+    color: #dff4ff !important;
 }}
 
 /* metric */
@@ -134,35 +158,33 @@ st.markdown(f"""
 [data-testid="stMetricLabel"] {{ color: {C['t2']} !important; font-size: 0.78rem !important; }}
 
 /* divider */
-hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
+hr {{ border-color: rgba(148,163,184,0.2) !important; margin: 0.9rem 0 !important; }}
 
 /* expander */
-.streamlit-expanderHeader {{ color: {C['t1']} !important; background: {C['card']} !important; border-radius: 8px !important; }}
-.streamlit-expanderContent {{ background: {C['bg2']} !important; border-radius: 0 0 8px 8px !important; }}
+.streamlit-expanderHeader {{
+    color: {C['t1']} !important;
+    background: rgba(15, 23, 42, 0.7) !important;
+    border: 1px solid {C['border']} !important;
+    border-radius: 12px !important;
+}}
+.streamlit-expanderContent {{ background: transparent !important; border-radius: 0 0 12px 12px !important; }}
 
 /* scrollbar */
-::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-::-webkit-scrollbar-track {{ background: {C['bg2']}; }}
-::-webkit-scrollbar-thumb {{ background: {C['border2']}; border-radius: 3px; }}
+::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+::-webkit-scrollbar-track {{ background: rgba(15,23,42,0.7); }}
+::-webkit-scrollbar-thumb {{ background: rgba(100,116,139,0.55); border-radius: 6px; }}
 
 /* hide streamlit chrome */
 #MainMenu, footer, header {{ visibility: hidden; }}
-.block-container {{ padding-top: 1rem !important; }}
+.block-container {{ padding-top: 0.7rem !important; max-width: 1500px; }}
 
-/* card helpers used in markdown */
-.fa-card {{
-    background: {C['card']};
-    border: 1px solid {C['border']};
-    border-radius: 14px;
-    padding: 20px 22px;
-    margin-bottom: 12px;
-}}
+/* badges/text helpers */
 .fa-pill {{
     display: inline-block;
     padding: 3px 10px;
     border-radius: 20px;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     margin: 2px;
 }}
 .g {{ color: {C['green']}; font-weight: 700; }}
@@ -170,21 +192,22 @@ hr {{ border-color: {C['border']} !important; margin: 1rem 0 !important; }}
 .b {{ color: {C['blue']}; font-weight: 700; }}
 .mono {{ font-family: 'JetBrains Mono', monospace; }}
 .grad {{
-    background: linear-gradient(135deg, {C['blue']}, {C['purple']});
+    background: linear-gradient(135deg, #7dd3fc 0%, #a78bfa 45%, #22d3ee 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
     font-weight: 800;
+    letter-spacing: 0.01em;
 }}
 .status-dot {{
-    display: inline-block; width: 7px; height: 7px;
+    display: inline-block; width: 8px; height: 8px;
     border-radius: 50%; background: {C['green']};
-    box-shadow: 0 0 8px {C['green']};
-    animation: pulse 2s infinite;
+    box-shadow: 0 0 10px {C['green']};
+    animation: pulse 1.8s infinite;
 }}
 @keyframes pulse {{
     0%,100% {{ opacity:1; transform:scale(1); }}
-    50% {{ opacity:.6; transform:scale(1.3); }}
+    50% {{ opacity:.6; transform:scale(1.35); }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -198,18 +221,61 @@ def load_data() -> dict:
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE) as f:
-                return json.load(f)
+                return ensure_data_schema(json.load(f))
         except Exception:
             pass
-    return {
+    return ensure_data_schema({
         "watchlist": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"],
         "portfolio": {},
         "alerts": [],
-    }
+        "preferences": {
+            "debug_mode": False,
+            "language": "CZ",
+        },
+    })
 
 def save_data(d: dict):
     with open(DATA_FILE, "w") as f:
         json.dump(d, f, indent=2)
+
+def ensure_data_schema(d: dict) -> dict:
+    """Backfill missing keys to keep backwards compatibility."""
+    if not isinstance(d, dict):
+        return load_data()
+    d.setdefault("watchlist", ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "AMD"])
+    d.setdefault("portfolio", {})
+    d.setdefault("alerts", [])
+    prefs = d.get("preferences", {})
+    if not isinstance(prefs, dict):
+        prefs = {}
+    prefs.setdefault("debug_mode", False)
+    prefs.setdefault("language", "CZ")
+    d["preferences"] = prefs
+    return d
+
+def is_debug_mode() -> bool:
+    data = ensure_data_schema(load_data())
+    return bool(data.get("preferences", {}).get("debug_mode", False))
+
+def log_debug(message: str):
+    if is_debug_mode():
+        st.info(f"🧪 DEBUG: {message}")
+
+def normalized_ticker_input(
+    label: str,
+    key: str,
+    default: str = "AAPL",
+    placeholder: str = "",
+    label_visibility: str = "visible",
+) -> str:
+    raw_key = f"{key}_raw"
+    if raw_key not in st.session_state:
+        st.session_state[raw_key] = st.session_state.get(key, default)
+    raw = st.text_input(label, key=raw_key, placeholder=placeholder, label_visibility=label_visibility)
+    clean = sanitize_ticker_input(raw, default=default)
+    if st.session_state.get(key) != clean:
+        st.session_state[key] = clean
+    return clean
 
 # ─────────────────────────────────────────────
 #  DATA ENGINE  (cached)
@@ -221,7 +287,8 @@ def fetch_stock(ticker: str, period: str = "1y", interval: str = "1d"):
         df = s.history(period=period, interval=interval, auto_adjust=True)
         info = s.info or {}
         return df, info
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_stock failed for {ticker}: {e}")
         return None, {}
 
 @st.cache_data(ttl=300)
@@ -245,8 +312,43 @@ def fetch_multi(tickers: list) -> dict:
                 "sector": info.get("sector", "N/A"),
                 "pe": info.get("trailingPE", None),
             }
-        except Exception:
+        except Exception as e:
+            log_debug(f"fetch_multi failed for {t}: {e}")
             continue
+    return out
+
+@st.cache_data(ttl=900)
+def fetch_market_regime() -> dict:
+    """Quick market regime snapshot using liquid macro proxies."""
+    proxies = {
+        "SPY": "SPY",
+        "QQQ": "QQQ",
+        "IWM": "IWM",
+        "TLT": "TLT",
+        "VIX": "^VIX",
+    }
+    out = {}
+    for k, sym in proxies.items():
+        try:
+            h = yf.Ticker(sym).history(period="3mo")
+            if h is None or h.empty or len(h) < 22:
+                continue
+            last = float(h["Close"].iloc[-1])
+            chg_1d = (last / float(h["Close"].iloc[-2]) - 1) * 100
+            chg_1m = (last / float(h["Close"].iloc[-22]) - 1) * 100
+            out[k] = {"last": last, "d1": chg_1d, "m1": chg_1m}
+        except Exception as e:
+            log_debug(f"fetch_market_regime failed for {sym}: {e}")
+    if not out:
+        return {}
+    risk_on_score = 0
+    risk_on_score += 1 if out.get("SPY", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("QQQ", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("IWM", {}).get("m1", -1) > 0 else 0
+    risk_on_score += 1 if out.get("VIX", {}).get("m1", 1) < 0 else 0
+    regime = "RISK-ON" if risk_on_score >= 3 else "NEUTRAL" if risk_on_score == 2 else "RISK-OFF"
+    out["regime"] = regime
+    out["score"] = risk_on_score
     return out
 
 @st.cache_data(ttl=600)
@@ -277,7 +379,8 @@ def fetch_news(ticker: str) -> list:
             else:
                 normalized.append(n)
         return normalized
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_news failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -335,7 +438,8 @@ def fetch_insider_sec(ticker: str) -> list:
                     break
 
         return trades
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_insider_sec failed for {ticker}: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -362,7 +466,59 @@ def fetch_analyst_info(ticker: str) -> dict:
             "num_analysts": info.get("numberOfAnalystOpinions", 0),
             "rec_summary": rec_summary,
         }
-    except Exception:
+    except Exception as e:
+        log_debug(f"fetch_analyst_info failed for {ticker}: {e}")
+        return {}
+
+@st.cache_data(ttl=900)
+def fetch_options_snapshot(ticker: str) -> dict:
+    """Return nearest-expiry options sentiment summary."""
+    try:
+        tk = yf.Ticker(ticker)
+        expiries = tk.options or []
+        if not expiries:
+            return {}
+        expiry = expiries[0]
+        chain = tk.option_chain(expiry)
+        calls = chain.calls.copy() if chain and chain.calls is not None else pd.DataFrame()
+        puts  = chain.puts.copy() if chain and chain.puts is not None else pd.DataFrame()
+        if calls.empty and puts.empty:
+            return {}
+
+        call_oi = float(calls["openInterest"].fillna(0).sum()) if "openInterest" in calls.columns else 0.0
+        put_oi  = float(puts["openInterest"].fillna(0).sum())  if "openInterest" in puts.columns else 0.0
+        call_vol = float(calls["volume"].fillna(0).sum()) if "volume" in calls.columns else 0.0
+        put_vol  = float(puts["volume"].fillna(0).sum())  if "volume" in puts.columns else 0.0
+        pcr_oi = (put_oi / call_oi) if call_oi > 0 else np.nan
+        pcr_vol = (put_vol / call_vol) if call_vol > 0 else np.nan
+
+        spot = float(tk.history(period="5d")["Close"].iloc[-1])
+        strikes = sorted(set(calls.get("strike", pd.Series(dtype=float)).dropna().tolist()) |
+                         set(puts.get("strike", pd.Series(dtype=float)).dropna().tolist()))
+        max_pain = None
+        if strikes:
+            pain_scores = []
+            for k in strikes:
+                call_pain = ((calls["strike"] - k).clip(lower=0) * calls["openInterest"]).sum() if not calls.empty else 0
+                put_pain  = ((k - puts["strike"]).clip(lower=0) * puts["openInterest"]).sum() if not puts.empty else 0
+                pain_scores.append((k, float(call_pain + put_pain)))
+            max_pain = min(pain_scores, key=lambda x: x[1])[0] if pain_scores else None
+
+        return {
+            "expiry": expiry,
+            "spot": spot,
+            "call_oi": call_oi,
+            "put_oi": put_oi,
+            "call_vol": call_vol,
+            "put_vol": put_vol,
+            "pcr_oi": pcr_oi,
+            "pcr_vol": pcr_vol,
+            "max_pain": max_pain,
+            "calls_top_oi": calls.nlargest(8, "openInterest")[["strike", "openInterest", "volume"]] if not calls.empty else pd.DataFrame(),
+            "puts_top_oi": puts.nlargest(8, "openInterest")[["strike", "openInterest", "volume"]] if not puts.empty else pd.DataFrame(),
+        }
+    except Exception as e:
+        log_debug(f"fetch_options_snapshot failed for {ticker}: {e}")
         return {}
 
 # ─────────────────────────────────────────────
@@ -769,11 +925,13 @@ CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor ="rgba(0,0,0,0)",
     font=dict(color=C["t1"], family="Inter"),
-    margin=dict(l=10, r=10, t=30, b=10),
+    margin=dict(l=8, r=8, t=26, b=8),
     hovermode="x unified",
-    xaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"]),
-    yaxis=dict(showgrid=True, gridcolor=C["grid"], zeroline=False, linecolor=C["border"],
-               tickfont=dict(color=C["t2"])),
+    hoverlabel=dict(
+        bgcolor="rgba(15,23,42,0.92)",
+        bordercolor=C["border2"],
+        font=dict(color=C["t1"], size=12),
+    ),
 )
 
 # ─────────────────────────────────────────────
@@ -1008,24 +1166,65 @@ def mini_sparkline(values, color, height=55):
     )
     return fig
 
+def to_tradingview_symbol(ticker: str, info: dict = None) -> str:
+    t = sanitize_ticker_input(ticker, default="AAPL")
+    if t.startswith("^"):
+        mapping = {"^GSPC": "SP:SPX", "^IXIC": "NASDAQ:IXIC", "^DJI": "DJ:DJI", "^VIX": "CBOE:VIX"}
+        return mapping.get(t, "SP:SPX")
+    ex = (info or {}).get("exchange", "")
+    if ex in ("NMS", "NAS", "NGM", "NCM"):
+        return f"NASDAQ:{t}"
+    if ex in ("NYQ", "NYE"):
+        return f"NYSE:{t}"
+    return f"NASDAQ:{t}"
+
+def render_tradingview_chart(ticker: str, info: dict = None, interval: str = "D", height: int = 640):
+    tv_symbol = to_tradingview_symbol(ticker, info)
+    tv_height = max(520, int(height) - 24)
+    widget = f"""
+    <div class="tradingview-widget-container">
+      <div id="tradingview_chart" style="height:{tv_height}px;"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "container_id": "tradingview_chart",
+        "autosize": false,
+        "width": "100%",
+        "height": {tv_height},
+        "symbol": "{tv_symbol}",
+        "interval": "{interval}",
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "cs",
+        "allow_symbol_change": true,
+        "studies": ["RSI@tv-basicstudies", "MASimple@tv-basicstudies", "BB@tv-basicstudies", "Volume@tv-basicstudies"],
+        "hide_top_toolbar": false,
+        "withdateranges": true
+      }});
+      </script>
+    </div>
+    """
+    components.html(widget, height=height)
+
 # ─────────────────────────────────────────────
 #  NAV / HEADER
 # ─────────────────────────────────────────────
 PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Charts", "Multi-Asset", "Insider", "Earnings", "Alerty", "Screener", "Makro", "Backtesting", "Monte Carlo", "Piotroski", "Settings"]
 EMOJIS = {"Dashboard":"📊","Stock Detail":"🔍","Portfolio":"💼","Charts":"📉","Multi-Asset":"🌐","Insider":"👤","Earnings":"📅","Alerty":"🔔","Screener":"🔎","Makro":"🌍","Backtesting":"⚗️","Monte Carlo":"🎲","Piotroski":"🏆","Settings":"⚙️"}
-CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty", "Settings"]
+CORE_PAGES = ["Dashboard", "Stock Detail", "Portfolio", "Screener", "Makro", "Alerty"]
 NAV_LABELS = {
     "Dashboard": "📊 Home",
     "Stock Detail": "🔍 Akcie",
-    "Portfolio": "💼 Portfolio",
+    "Portfolio": "💼 Portf.",
     "Screener": "🔎 Screener",
     "Makro": "🌍 Makro",
     "Alerty": "🔔 Alerty",
-    "Settings": "⚙️ Nastavení",
+    "Settings": "⚙️ Nastav.",
 }
 
 def render_header():
-    c1, c2, c3 = st.columns([2, 6, 2])
+    c1, c2, c3 = st.columns([2, 7, 3])
     with c1:
         st.markdown(f"""
             <div style="display:flex;align-items:center;gap:10px;padding-top:6px;">
@@ -1048,9 +1247,9 @@ def render_header():
                     st.session_state["page"] = page
                     st.rerun()
         with cols[-1]:
-            adv_default = "Více…"
+            adv_default = "Další…"
             adv_choice = st.selectbox(
-                "",
+                "Další stránky",
                 [adv_default] + advanced_pages,
                 index=0,
                 key="nav_more_select",
@@ -1063,16 +1262,16 @@ def render_header():
         if "header_ticker_input" not in st.session_state:
             st.session_state["header_ticker_input"] = st.session_state.get("ticker", "AAPL")
         ticker_raw = st.text_input(
-            "",
+            "Vyhledat ticker",
             key="header_ticker_input",
             placeholder="🔍 Ticker",
             label_visibility="collapsed",
         )
         ticker = sanitize_ticker_input(ticker_raw, default=st.session_state.get("ticker", "AAPL"))
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
         go_search = st.button("Hledat", key="header_search_btn", use_container_width=True)
         if go_search and ticker:
             st.session_state["ticker"] = ticker
-            st.session_state["header_ticker_input"] = ticker
             st.session_state["page"] = "Stock Detail"
             st.rerun()
 
@@ -1081,6 +1280,17 @@ def render_header():
 # ─────────────────────────────────────────────
 def page_dashboard():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📊 Market Dashboard</h2>", unsafe_allow_html=True)
+    regime = fetch_market_regime()
+    if regime:
+        reg_col = C["green"] if regime.get("regime") == "RISK-ON" else C["orange"] if regime.get("regime") == "NEUTRAL" else C["red"]
+        r1, r2, r3, r4, r5, r6 = st.columns(6)
+        with r1: st.metric("Market režim", regime.get("regime", "N/A"))
+        with r2: st.metric("Risk score", f"{regime.get('score', 0)}/4")
+        with r3: st.metric("SPY 1M", f"{regime.get('SPY', {}).get('m1', 0):+.1f}%")
+        with r4: st.metric("QQQ 1M", f"{regime.get('QQQ', {}).get('m1', 0):+.1f}%")
+        with r5: st.metric("IWM 1M", f"{regime.get('IWM', {}).get('m1', 0):+.1f}%")
+        with r6: st.metric("VIX 1M", f"{regime.get('VIX', {}).get('m1', 0):+.1f}%")
+        st.markdown(f"<div style='height:3px;border-radius:10px;background:{with_alpha(reg_col,0.55)};margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
     # ── Market indices ─────────────────────
     indices = {"S&P 500":"^GSPC","NASDAQ":"^IXIC","DOW":"^DJI","VIX":"^VIX","Russell":"^RUT"}
@@ -1213,16 +1423,6 @@ def page_stock_detail():
     sector= info.get("sector","")
     div_y = info.get("dividendYield",0) or 0
 
-    base_pills = f"""
-        <div class="fa-pill" style="background:{C['blue_d']};color:{C['blue']};">MC: ${mc/1e9:.1f}B</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">P/E: {f"{pe:.1f}" if pe else "–"}</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">52W: ${l52:.0f} – ${h52:.0f}</div>
-    """
-    extra_pills = f"""
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">Vol: {vol/1e6:.1f}M</div>
-        <div class="fa-pill" style="background:{C['card']};color:{C['t2']};">EPS: ${f"{eps:.2f}" if eps else "–"}</div>
-        <div class="fa-pill" style="background:{C['green_d']};color:{C['green']};">Div: {div_y*100:.2f}%</div>
-    """
     st.markdown(f"""
         <div class="fa-card" style="border-color:{col}30;margin-bottom:1rem;">
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center;">
@@ -1236,12 +1436,25 @@ def page_stock_detail():
                     <div class="mono" style="font-size:1.3rem;font-weight:700;color:{col};">{'▲' if chg>=0 else '▼'} {abs(chg):.2f}%  (${abs(cur-prev):.2f})</div>
                 </div>
             </div>
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;">
-                {base_pills}
-                {extra_pills}
-            </div>
         </div>
     """, unsafe_allow_html=True)
+    kpi_cols = st.columns(6)
+    kpis = [
+        ("MC", f"${mc/1e9:.1f}B" if mc else "–"),
+        ("P/E", f"{pe:.1f}" if pe else "–"),
+        ("52W", f"${l52:.0f} – ${h52:.0f}" if h52 and l52 else "–"),
+        ("Vol", f"{vol/1e6:.1f}M" if vol else "–"),
+        ("EPS", f"${eps:.2f}" if eps else "–"),
+        ("Div", f"{div_y*100:.2f}%" if div_y is not None else "–"),
+    ]
+    for i, (lbl, val) in enumerate(kpis):
+        with kpi_cols[i]:
+            st.markdown(f"""
+                <div class="fa-card" style="padding:10px 12px;margin-bottom:10px;">
+                    <div style="font-size:.70rem;color:{C['t3']};text-transform:uppercase;">{lbl}</div>
+                    <div class="mono" style="font-size:1.05rem;font-weight:700;color:{C['t1']};white-space:nowrap;">{val}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
     # Portfolio action buttons
     data = load_data()
@@ -1264,8 +1477,8 @@ def page_stock_detail():
             st.rerun()
     with ba4:
         if st.button("📅 Earnings", use_container_width=True):
-            st.session_state["page"] = "Earnings"
-            st.rerun()
+            st.session_state["earnings_ticker"] = ticker
+            st.toast("Zůstáváš na stránce analýzy akcie. Earnings detail najdeš v sekci Earnings bez automatického přepnutí.")
 
     with st.expander("📎 Detail o akcii", expanded=True):
         d1, d2 = st.columns(2)
@@ -1292,14 +1505,14 @@ def page_stock_detail():
     st.markdown("---")
 
     # ── Tabs ──────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Pro Invest"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(["📈 Graf", "🎯 Buy Score", "📊 Fundamenty", "📰 Zprávy", "👤 Insider", "💰 DCF Kalkulačka", "📅 Sezónnost", "📉 Rel. Síla", "🏦 Instituce & Opce"])
 
     # ── TAB 1: Chart ──────────────────────
     with tab1:
         if "tf" not in st.session_state:
             st.session_state["tf"] = "1Y"
         tf = st.session_state["tf"]
-        tf_map = {"1D":("1d","5m"),"5D":("5d","30m"),"1M":("1mo","1d"),"3M":("3mo","1d"),"6M":("6mo","1d"),"1Y":("1y","1d"),"MAX":("max","1wk")}
+        tv_map = {"1D":"5", "5D":"30", "1M":"60", "3M":"240", "6M":"D", "1Y":"D", "MAX":"W"}
         c1,c2,c3,c4,c5,c6,c7,_ = st.columns([1,1,1,1,1,1,1,5])
         for col_obj, label in zip([c1,c2,c3,c4,c5,c6,c7],["1D","5D","1M","3M","6M","1Y","MAX"]):
             with col_obj:
@@ -1307,44 +1520,7 @@ def page_stock_detail():
                     st.session_state["tf"] = label
                     st.rerun()
 
-        period, interval = tf_map.get(tf, ("1y","1d"))
-        df_c, _ = fetch_stock(ticker, period=period, interval=interval)
-        if df_c is not None and not df_c.empty:
-            df_c = calc_indicators(df_c)
-            fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                                row_heights=[0.55,0.22,0.23], vertical_spacing=0.02)
-            # Candles
-            fig.add_trace(go.Candlestick(
-                x=df_c.index, open=df_c["Open"], high=df_c["High"],
-                low=df_c["Low"], close=df_c["Close"], name=ticker,
-                increasing=dict(line=dict(color=C["green"]), fillcolor=C["green"]),
-                decreasing=dict(line=dict(color=C["red"]), fillcolor=C["red"]),
-            ), row=1, col=1)
-            # SMAs
-            for sma, color in [("SMA20","#f59e0b"),("SMA50","#00b4d8"),("SMA200","#7c3aed")]:
-                if sma in df_c.columns:
-                    fig.add_trace(go.Scatter(x=df_c.index, y=df_c[sma], name=sma,
-                        line=dict(color=color,width=1.2,dash="dot"), opacity=0.8), row=1, col=1)
-            # BB
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Upper"], name="BB",
-                line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["BB_Lower"],
-                line=dict(color=C["purple"],width=1,dash="dash"), opacity=0.5,
-                fill="tonexty", fillcolor=with_alpha(C["purple"], 0.07), showlegend=False), row=1, col=1)
-            # Volume
-            vcols = [C["green"] if df_c["Close"].iloc[i]>=df_c["Open"].iloc[i] else C["red"] for i in range(len(df_c))]
-            fig.add_trace(go.Bar(x=df_c.index, y=df_c["Volume"], name="Volume",
-                marker_color=vcols, marker_opacity=0.4), row=2, col=1)
-            # RSI
-            fig.add_trace(go.Scatter(x=df_c.index, y=df_c["RSI"], name="RSI",
-                line=dict(color=C["purple"],width=1.8)), row=3, col=1)
-            fig.add_hline(y=70, line_dash="dash", line_color=C["red"], opacity=0.5, row=3, col=1)
-            fig.add_hline(y=30, line_dash="dash", line_color=C["green"], opacity=0.5, row=3, col=1)
-
-            fig.update_layout(**CHART_LAYOUT, height=620, showlegend=True,
-                legend=dict(orientation="h",y=1.02,x=0,font=dict(size=11),bgcolor="rgba(0,0,0,0)"))
-            fig.update_xaxes(rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
+        render_tradingview_chart(ticker, info, interval=tv_map.get(tf, "D"), height=920)
 
     # ── TAB 2: Buy Score ──────────────────
     with tab2:
@@ -1817,9 +1993,47 @@ def page_stock_detail():
                     </div>
                 """, unsafe_allow_html=True)
 
-    # ── TAB 9: Pro Invest ─────────────────
+    # ── TAB 9: Institutional + Options ─────────────────
     with tab9:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Profesionální přehled pro retail i institucionální workflow: risk engine, investiční memo a export.</div>", unsafe_allow_html=True)
+        st.caption("Reálná doplňková data: institucionální vlastnictví, short interest a snapshot opcí.")
+
+        i1, i2, i3, i4 = st.columns(4)
+        with i1:
+            inst = info.get("heldPercentInstitutions", None)
+            st.metric("Instituce drží", f"{inst*100:.1f}%" if isinstance(inst, (int, float)) else "N/A")
+        with i2:
+            insiders_h = info.get("heldPercentInsiders", None)
+            st.metric("Insideři drží", f"{insiders_h*100:.1f}%" if isinstance(insiders_h, (int, float)) else "N/A")
+        with i3:
+            short_ratio = info.get("shortRatio", None)
+            st.metric("Short ratio", f"{short_ratio:.2f}" if isinstance(short_ratio, (int, float)) else "N/A")
+        with i4:
+            short_pct = info.get("shortPercentOfFloat", None)
+            st.metric("Short % float", f"{short_pct*100:.1f}%" if isinstance(short_pct, (int, float)) else "N/A")
+
+        st.markdown("---")
+        opt = fetch_options_snapshot(ticker)
+        if not opt:
+            st.info("Opční data nejsou pro tento ticker dostupná.")
+        else:
+            op1, op2, op3, op4, op5 = st.columns(5)
+            with op1: st.metric("Expirace", opt["expiry"])
+            with op2: st.metric("Spot", f"${opt['spot']:.2f}")
+            with op3: st.metric("Put/Call OI", f"{opt['pcr_oi']:.2f}" if pd.notna(opt["pcr_oi"]) else "N/A")
+            with op4: st.metric("Put/Call Vol", f"{opt['pcr_vol']:.2f}" if pd.notna(opt["pcr_vol"]) else "N/A")
+            with op5: st.metric("Max pain", f"${opt['max_pain']:.2f}" if opt.get("max_pain") else "N/A")
+
+            c_oi = opt.get("calls_top_oi", pd.DataFrame()).copy()
+            p_oi = opt.get("puts_top_oi", pd.DataFrame()).copy()
+            oc1, oc2 = st.columns(2)
+            with oc1:
+                st.markdown("**Top call strikes (OI)**")
+                st.dataframe(c_oi, use_container_width=True, hide_index=True)
+            with oc2:
+                st.markdown("**Top put strikes (OI)**")
+                st.dataframe(p_oi, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
         if not risk_pack:
             st.info("Risk engine nemá dostatek dat.")
         else:
@@ -1830,34 +2044,19 @@ def page_stock_detail():
             with rc4: st.metric("Risk Score", f"{risk_pack['risk_score']:.0f}/100")
             if risk_pack.get("beta") is not None:
                 st.caption(f"Beta vs trh: {risk_pack['beta']:.2f}")
-
-        memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
-        st.markdown(f"""
-            <div class="fa-card" style="border-color:{C['blue']}30;">
-                <div style="font-size:.78rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.05em;">Investment Memo (auto-generated)</div>
-                <div style="font-size:1.1rem;font-weight:700;color:{C['t1']};margin-top:4px;">{memo['company']} ({memo['ticker']})</div>
-                <div style="font-size:.92rem;color:{C['blue']};font-weight:600;margin-top:8px;">Teze: {memo['thesis']}</div>
-                <div style="font-size:.82rem;color:{C['t2']};margin-top:8px;">
-                    Fair Value: {f"${memo['fair_value']:.2f}" if memo.get('fair_value') else "N/A"} ·
-                    Cena: {f"${memo['current_price']:.2f}" if memo.get('current_price') else "N/A"} ·
-                    Upside: {f"{memo['upside_pct']:+.1f}%" if memo.get('upside_pct') is not None else "N/A"} ·
-                    Buy Score: {memo.get('buy_score') if memo.get('buy_score') is not None else "N/A"} ·
-                    Risk Score: {f"{memo['risk_score']:.0f}" if memo.get('risk_score') is not None else "N/A"}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("**Klíčová rizika (checklist)**")
-        for r in memo.get("key_risks", []):
-            st.markdown(f"- {r}")
-
-        st.download_button(
-            "⬇️ Stáhnout Investment Memo (JSON)",
-            data=json.dumps(memo, indent=2, ensure_ascii=False),
-            file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
-            mime="application/json",
-            use_container_width=True,
-        )
+        with st.expander("🧾 Investment memo (volitelné)", expanded=False):
+            memo = generate_investment_memo(ticker, info, dcf if 'dcf' in locals() else {}, risk_pack, score_data)
+            st.write(f"**Teze:** {memo['thesis']}")
+            st.write("**Klíčová rizika:**")
+            for r in memo.get("key_risks", []):
+                st.write(f"- {r}")
+            st.download_button(
+                "⬇️ Stáhnout Investment Memo (JSON)",
+                data=json.dumps(memo, indent=2, ensure_ascii=False),
+                file_name=f"{ticker}_investment_memo_v{APP_VERSION}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 def page_portfolio():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>💼 Portfolio</h2>", unsafe_allow_html=True)
@@ -1867,7 +2066,7 @@ def page_portfolio():
     # Add position
     with st.expander("➕ Přidat / upravit pozici", expanded=len(portfolio)==0):
         pc1,pc2,pc3,pc4 = st.columns(4)
-        with pc1: p_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+        with pc1: p_ticker = normalized_ticker_input("Ticker", key="portfolio_ticker", default=st.session_state.get("ticker", "AAPL"), placeholder="AAPL")
         with pc2: p_shares = st.number_input("Počet akcií", min_value=0.001, value=10.0, step=1.0)
         with pc3: p_cost   = st.number_input("Průměrná cena ($)", min_value=0.01, value=100.0, step=0.01)
         with pc4: p_sector = st.selectbox("Sektor", ["Technology","Healthcare","Finance","Energy","Consumer","Industrial","Real Estate","Other"])
@@ -2121,7 +2320,7 @@ def page_charts():
     ticker = st.session_state.get("ticker","AAPL")
 
     cc1,cc2,cc3 = st.columns([2,1,1])
-    with cc1: chart_ticker = st.text_input("Symbol", value=ticker, label_visibility="collapsed").upper().strip()
+    with cc1: chart_ticker = normalized_ticker_input("Symbol", key="charts_symbol", default=ticker, placeholder="AAPL", label_visibility="collapsed")
     with cc2: chart_type   = st.selectbox("Typ grafu", ["Candlestick","Line","Area","OHLC"], label_visibility="collapsed")
     with cc3: period_sel   = st.selectbox("Období", ["1mo","3mo","6mo","1y","2y","5y","max"], index=3, label_visibility="collapsed")
 
@@ -2325,7 +2524,7 @@ def page_insider():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>👤 Insider Trades — SEC EDGAR</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Reálné Form-4 záznamy ze SEC EDGAR (data.sec.gov). Pouze US akcie kótované na NYSE/NASDAQ.</div>", unsafe_allow_html=True)
 
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL"), placeholder="AAPL").upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="insider_ticker", default=st.session_state.get("ticker","AAPL"), placeholder="AAPL")
     if st.button("🔍 Načíst insider data", use_container_width=True):
         st.session_state["ticker"] = ticker
         with st.spinner("Přistupuji k SEC EDGAR…"):
@@ -2382,95 +2581,154 @@ def page_insider():
 # ─────────────────────────────────────────────
 def page_earnings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>📅 Earnings Kalendář</h2>", unsafe_allow_html=True)
-    ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    ticker = normalized_ticker_input("Ticker", key="earnings_ticker", default=st.session_state.get("ticker","AAPL"))
+    def _normalize_earnings_df(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
+        w = df.copy()
+        if isinstance(w.index, pd.DatetimeIndex):
+            w["Date"] = pd.to_datetime(w.index, errors="coerce")
+        elif "Earnings Date" in w.columns:
+            w["Date"] = pd.to_datetime(w["Earnings Date"], errors="coerce")
+        else:
+            w["Date"] = pd.to_datetime(w.iloc[:, 0], errors="coerce")
+        col_map = {str(c).strip().lower().replace(" ", ""): c for c in w.columns}
+        est_col = next((col_map[k] for k in ["epsestimate", "estimate"] if k in col_map), None)
+        act_col = next((col_map[k] for k in ["reportedeps", "epsactual", "actual"] if k in col_map), None)
+        sur_col = next((col_map[k] for k in ["surprise(%)", "surprisepercent", "surprise"] if k in col_map), None)
+        out = pd.DataFrame()
+        out["Date"] = w["Date"]
+        out["EPS Estimate"] = pd.to_numeric(w[est_col], errors="coerce") if est_col else np.nan
+        out["EPS Actual"] = pd.to_numeric(w[act_col], errors="coerce") if act_col else np.nan
+        out["Surprise (%)"] = pd.to_numeric(w[sur_col], errors="coerce") if sur_col else np.nan
+        out = out.dropna(subset=["Date"]).sort_values("Date", ascending=False)
+        return out
 
-    if st.button("📅 Načíst earnings data", use_container_width=True):
+    def _fetch_earnings_payload(t: str):
+        payload = {"next_date": None, "earnings_hist": pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])}
+        s_obj = yf.Ticker(t)
+        try:
+            edf = s_obj.get_earnings_dates(limit=24)
+            payload["earnings_hist"] = _normalize_earnings_df(edf)
+        except Exception:
+            try:
+                payload["earnings_hist"] = _normalize_earnings_df(getattr(s_obj, "earnings_dates", None))
+            except Exception:
+                payload["earnings_hist"] = pd.DataFrame(columns=["Date", "EPS Estimate", "EPS Actual", "Surprise (%)"])
+
+        if payload["earnings_hist"].empty:
+            try:
+                eh = getattr(s_obj, "earnings_history", None)
+                payload["earnings_hist"] = _normalize_earnings_df(eh)
+            except Exception:
+                pass
+
+        now_utc = pd.Timestamp.utcnow().tz_localize(None)
+        future = payload["earnings_hist"][payload["earnings_hist"]["Date"] >= now_utc].copy()
+        if not future.empty:
+            payload["next_date"] = future.sort_values("Date", ascending=True)["Date"].iloc[0]
+        else:
+            try:
+                cal = s_obj.calendar
+                if isinstance(cal, dict):
+                    ed_val = cal.get("Earnings Date")
+                    if ed_val:
+                        payload["next_date"] = pd.Timestamp(ed_val[0] if isinstance(ed_val, list) else ed_val)
+                elif cal is not None and hasattr(cal, "empty") and not cal.empty and "Earnings Date" in cal.index:
+                    payload["next_date"] = pd.Timestamp(cal.loc["Earnings Date"].iloc[0])
+            except Exception:
+                payload["next_date"] = None
+        return payload
+
+    load_click = st.button("📅 Načíst earnings data", use_container_width=True)
+    state_key = f"earnings_payload_{ticker}"
+    if load_click:
         st.session_state["ticker"] = ticker
-        df, info = fetch_stock(ticker, period="5y")
+        with st.spinner("Načítám earnings data..."):
+            st.session_state[state_key] = _fetch_earnings_payload(ticker)
+            st.session_state[f"earnings_info_{ticker}"] = fetch_stock(ticker, period="5y")[1]
+    if state_key not in st.session_state:
+        st.info("Klikni na „Načíst earnings data“ pro přesnou historii reportů EPS a datumy výsledků.")
+        return
 
-        # Earnings date
-        try:
-            s_obj = yf.Ticker(ticker)
-            cal   = s_obj.calendar
-            earn_date = None
-            if isinstance(cal, dict):
-                # New yfinance format: dict with "Earnings Date" key
-                ed_val = cal.get("Earnings Date")
-                if ed_val:
-                    earn_date = ed_val[0] if isinstance(ed_val, list) else ed_val
-            elif cal is not None and hasattr(cal, "empty") and not cal.empty:
-                if "Earnings Date" in cal.index:
-                    earn_date = cal.loc["Earnings Date"].iloc[0]
-        except Exception:
-            earn_date = None
+    payload = st.session_state.get(state_key, {})
+    earnings_hist = payload.get("earnings_hist", pd.DataFrame())
+    next_date = payload.get("next_date")
+    info = st.session_state.get(f"earnings_info_{ticker}", {})
 
-        # EPS history
-        try:
-            s_obj    = yf.Ticker(ticker)
-            earnings = s_obj.earnings_history
-        except Exception:
-            earnings = None
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
+        st.subheader("📅 Příští earnings")
+        if next_date is not None and pd.notna(next_date):
+            try:
+                ed = pd.Timestamp(next_date).tz_localize(None) if getattr(next_date, "tzinfo", None) else pd.Timestamp(next_date)
+                days_left = (ed.normalize() - pd.Timestamp.utcnow().tz_localize(None).normalize()).days
+                st.markdown(f"""
+                    <div style='text-align:center;'>
+                        <div class='mono' style='font-size:2rem;font-weight:800;color:{C['blue']};'>{ed.strftime('%d.%m.%Y')}</div>
+                        <div style='color:{C['t2']};margin-top:6px;'>{ed.strftime('%A')} • za {days_left} dní</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            except Exception:
+                st.write(str(next_date))
+        else:
+            st.info("Datum příštích earnings není k dispozici.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
-            st.subheader("📅 Příští earnings")
-            if earn_date:
-                try:
-                    ed = pd.Timestamp(earn_date)
-                    days_left = (ed - pd.Timestamp.now()).days
-                    st.markdown(f"""
-                        <div style='text-align:center;'>
-                            <div class='mono' style='font-size:2rem;font-weight:800;color:{C['blue']};'>{ed.strftime('%d.%m.%Y')}</div>
-                            <div style='color:{C['t2']};margin-top:6px;'>za {days_left} dní</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                except Exception:
-                    st.write(str(earn_date))
-            else:
-                st.info("Datum earnings není k dispozici.")
-            st.markdown("</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
+        st.subheader("🎯 Analyst Estimates")
+        an = fetch_analyst_info(ticker)
+        if an:
+            e1,e2 = st.columns(2)
+            with e1:
+                st.metric("Avg. target", f"${an.get('target_mean',0):.2f}" if an.get('target_mean') else "–")
+                st.metric("Rating", an.get("recommendation","–").replace("_"," ").title())
+            with e2:
+                st.metric("High target", f"${an.get('target_high',0):.2f}" if an.get('target_high') else "–")
+                st.metric("Low target",  f"${an.get('target_low',0):.2f}"  if an.get('target_low')  else "–")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        with col2:
-            st.markdown(f"<div class='fa-card'>", unsafe_allow_html=True)
-            st.subheader("🎯 Analyst Estimates")
-            an = fetch_analyst_info(ticker)
-            if an:
-                e1,e2 = st.columns(2)
-                with e1:
-                    st.metric("Avg. target", f"${an.get('target_mean',0):.2f}" if an.get('target_mean') else "–")
-                    st.metric("Rating", an.get("recommendation","–").replace("_"," ").title())
-                with e2:
-                    st.metric("High target", f"${an.get('target_high',0):.2f}" if an.get('target_high') else "–")
-                    st.metric("Low target",  f"${an.get('target_low',0):.2f}"  if an.get('target_low')  else "–")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        # EPS history chart
-        if earnings is not None and not earnings.empty:
-            st.markdown("---")
-            st.subheader("📈 Historie EPS — skutečný vs. odhadovaný")
-            fig_e = go.Figure()
-            if "epsEstimate" in earnings.columns:
-                fig_e.add_trace(go.Bar(x=earnings.index, y=earnings["epsEstimate"],
-                    name="Odhad", marker_color=C["t3"], marker_opacity=0.6))
-            if "epsActual" in earnings.columns:
-                colors_e = [C["green"] if (a or 0) >= (e or 0) else C["red"]
-                            for a, e in zip(earnings.get("epsActual",[]), earnings.get("epsEstimate",[]))]
-                fig_e.add_trace(go.Bar(x=earnings.index, y=earnings["epsActual"],
-                    name="Skutečný", marker_color=colors_e, marker_opacity=0.85))
-            fig_e.update_layout(**CHART_LAYOUT, height=320, barmode="group",
-                legend=dict(orientation="h",bgcolor="rgba(0,0,0,0)"))
-            st.plotly_chart(fig_e, use_container_width=True, config={"displayModeBar":False})
-
-        # Key financials
+    if earnings_hist is not None and not earnings_hist.empty:
+        hist = earnings_hist[earnings_hist["Date"] < pd.Timestamp.utcnow().tz_localize(None)].copy()
+        hist = hist.sort_values("Date", ascending=True).tail(8)
+        hist["Label"] = hist["Date"].dt.strftime("%b %Y")
         st.markdown("---")
-        st.subheader("💰 Klíčová finanční data")
-        if info:
-            fc1,fc2,fc3,fc4 = st.columns(4)
-            with fc1: st.metric("Revenue (TTM)", f"${info.get('totalRevenue',0)/1e9:.1f}B" if info.get('totalRevenue') else "–")
-            with fc2: st.metric("Gross Profit",  f"${info.get('grossProfits',0)/1e9:.1f}B" if info.get('grossProfits') else "–")
-            with fc3: st.metric("EBITDA",        f"${info.get('ebitda',0)/1e9:.1f}B" if info.get('ebitda') else "–")
-            with fc4: st.metric("Free Cash Flow",f"${info.get('freeCashflow',0)/1e9:.1f}B" if info.get('freeCashflow') else "–")
+        st.subheader("📈 Historie EPS — skutečný vs. odhadovaný")
+        fig_e = go.Figure()
+        fig_e.add_trace(go.Bar(
+            x=hist["Label"], y=hist["EPS Estimate"],
+            name="Odhad", marker_color=C["t3"], marker_opacity=0.6
+        ))
+        colors_e = [C["green"] if (a if pd.notna(a) else -np.inf) >= (e if pd.notna(e) else -np.inf) else C["red"]
+                    for a, e in zip(hist["EPS Actual"], hist["EPS Estimate"])]
+        fig_e.add_trace(go.Bar(
+            x=hist["Label"], y=hist["EPS Actual"],
+            name="Skutečný", marker_color=colors_e, marker_opacity=0.85
+        ))
+        fig_e.update_layout(**CHART_LAYOUT, height=340, barmode="group",
+            legend=dict(orientation="h", bgcolor="rgba(0,0,0,0)"))
+        st.plotly_chart(fig_e, use_container_width=True, config={"displayModeBar":False})
+
+        tbl = hist.sort_values("Date", ascending=False).copy()
+        tbl["Date"] = tbl["Date"].dt.strftime("%Y-%m-%d")
+        tbl["Day"] = pd.to_datetime(tbl["Date"], errors="coerce").dt.strftime("%a")
+        tbl["EPS Estimate"] = tbl["EPS Estimate"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+        tbl["EPS Actual"] = tbl["EPS Actual"].map(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+        tbl["Surprise (%)"] = tbl["Surprise (%)"].map(lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A")
+        st.dataframe(tbl[["Date", "Day", "EPS Estimate", "EPS Actual", "Surprise (%)"]], use_container_width=True, hide_index=True)
+    else:
+        st.warning("Historie earnings (EPS estimate vs actual) není pro tento ticker dostupná.")
+
+    st.markdown("---")
+    st.subheader("💰 Klíčová finanční data")
+    if info:
+        fc1,fc2,fc3,fc4 = st.columns(4)
+        with fc1: st.metric("Revenue (TTM)", f"${info.get('totalRevenue',0)/1e9:.1f}B" if info.get('totalRevenue') else "–")
+        with fc2: st.metric("Gross Profit",  f"${info.get('grossProfits',0)/1e9:.1f}B" if info.get('grossProfits') else "–")
+        with fc3: st.metric("EBITDA",        f"${info.get('ebitda',0)/1e9:.1f}B" if info.get('ebitda') else "–")
+        with fc4: st.metric("Free Cash Flow",f"${info.get('freeCashflow',0)/1e9:.1f}B" if info.get('freeCashflow') else "–")
 
 # ─────────────────────────────────────────────
 #  PAGE: ALERTY
@@ -2484,7 +2742,7 @@ def page_alerts():
     with st.expander("➕ Přidat alert", expanded=True):
         ac1,ac2,ac3,ac4 = st.columns(4)
         with ac1:
-            a_ticker = st.text_input("Ticker", value=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL"))).upper().strip()
+            a_ticker = normalized_ticker_input("Ticker", key="alerts_ticker", default=st.session_state.get("alert_ticker", st.session_state.get("ticker","AAPL")))
         with ac2:
             a_type = st.selectbox("Typ alertu", ["Cena překročí", "Cena klesne pod", "Buy Score překročí", "Buy Score klesne pod"])
         with ac3:
@@ -2699,7 +2957,20 @@ def page_screener():
 # ─────────────────────────────────────────────
 def page_settings():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>⚙️ Nastavení</h2>", unsafe_allow_html=True)
-    data = load_data()
+    data = ensure_data_schema(load_data())
+
+    st.subheader("🧭 Preference")
+    pref1, pref2 = st.columns(2)
+    prefs = data.get("preferences", {})
+    with pref1:
+        debug_mode = st.toggle("Debug mód (zobrazit technické chyby)", value=bool(prefs.get("debug_mode", False)))
+    with pref2:
+        language = st.selectbox("Jazyk UI", ["CZ", "EN"], index=0 if prefs.get("language", "CZ") == "CZ" else 1)
+    if debug_mode != bool(prefs.get("debug_mode", False)) or language != prefs.get("language", "CZ"):
+        data["preferences"]["debug_mode"] = debug_mode
+        data["preferences"]["language"] = language
+        save_data(data)
+        st.success("Preference uloženy.")
 
     st.subheader("⭐ Watchlist")
     wl = data.get("watchlist", [])
@@ -2707,7 +2978,7 @@ def page_settings():
 
     wc1, wc2 = st.columns(2)
     with wc1:
-        new_sym = st.text_input("Přidat symbol", placeholder="např. GOOG").upper().strip()
+        new_sym = normalized_ticker_input("Přidat symbol", key="settings_new_symbol", default="", placeholder="např. GOOG")
         if st.button("➕ Přidat"):
             if new_sym and new_sym not in wl:
                 wl.append(new_sym)
@@ -2748,6 +3019,20 @@ def page_settings():
                        "application/json")
 
     st.markdown("---")
+    st.subheader("📥 Import")
+    uploaded = st.file_uploader("Nahrát zálohu (JSON)", type=["json"])
+    if uploaded is not None:
+        try:
+            imported = json.load(uploaded)
+            imported = ensure_data_schema(imported)
+            save_data(imported)
+            st.success("Data byla úspěšně importována.")
+            st.rerun()
+        except Exception as e:
+            st.error("Import se nezdařil. Zkontroluj prosím formát souboru.")
+            log_debug(f"Import failed: {e}")
+
+    st.markdown("---")
     st.markdown(f"""
         <div style="font-size:.78rem;color:{C['t3']};line-height:1.8;">
         <b style="color:{C['t2']};">Datové zdroje:</b><br>
@@ -2766,261 +3051,499 @@ def page_settings():
 # ─────────────────────────────────────────────
 #  PAGE: EKONOMICKÝ KALENDÁŘ (MAKRO)
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=3600)
-def fetch_fred_series(series_id: str, count: int = 24) -> pd.Series:
-    """Fetch data from FRED (Federal Reserve Economic Data) – no API key needed for public series."""
+def _macro_series_map() -> dict:
+    """Central mapping: label -> FRED series ID."""
+    return {
+        "CPI YoY (%)": "CPIAUCSL",
+        "Unemployment Rate (%)": "UNRATE",
+        "FED Funds Rate (%)": "FEDFUNDS",
+        "GDP Growth QoQ (%)": "A191RL1Q225SBEA",
+        "10Y Treasury Yield (%)": "DGS10",
+        "Inflation Expectations 10Y (%)": "T10YIEM",
+    }
+
+def _fred_client():
+    """
+    Build FRED client via fredapi + st.secrets key.
+    Returns (client_or_none, error_message_or_none).
+    """
+    api_key = os.getenv("FRED_API_KEY", None)
+    if not api_key:
+        try:
+            # to_dict() is safer for optional lookup than direct indexing/get
+            sec = st.secrets.to_dict() if hasattr(st.secrets, "to_dict") else {}
+            api_key = sec.get("FRED_API_KEY", None)
+        except Exception:
+            api_key = None
+    if not api_key:
+        return None, None
     try:
-        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=20)
-        r.raise_for_status()
-        df = pd.read_csv(StringIO(r.text))
-        if df.empty:
-            return pd.Series(dtype=float)
+        from fredapi import Fred
+        return Fred(api_key=api_key), None
+    except Exception as e:
+        return None, f"Nepodařilo se inicializovat fredapi ({e})."
 
-        date_col = "DATE" if "DATE" in df.columns else df.columns[0]
-        value_cols = [c for c in df.columns if c != date_col]
-        if not value_cols:
+def _fetch_fred_series_public(series_id: str, months: int = 60) -> pd.Series:
+    """
+    Public fallback without API key (pandas_datareader -> FRED).
+    """
+    try:
+        from pandas_datareader import data as web
+        start = datetime.now() - timedelta(days=int(months * 31))
+        df = web.DataReader(series_id, "fred", start, datetime.now())
+        if df is None or df.empty:
             return pd.Series(dtype=float)
-
-        val_col = value_cols[0]
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df[val_col] = pd.to_numeric(df[val_col].replace(".", np.nan), errors="coerce")
-        df = df.dropna(subset=[date_col, val_col]).set_index(date_col).sort_index()
-        return df[val_col].iloc[-count:]
-    except Exception:
+        s = pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna()
+        s.index = pd.to_datetime(s.index)
+        return s.sort_index().iloc[-months:]
+    except Exception as e:
+        log_debug(f"_fetch_fred_series_public({series_id}) failed: {e}")
         return pd.Series(dtype=float)
 
 @st.cache_data(ttl=1800)
-def fetch_macro_snapshot() -> dict:
-    """Pull key macro indicators from FRED."""
-    ids = {
-        "CPI (YoY %)":        "CPIAUCSL",
-        "Core CPI (YoY %)":   "CPILFESL",
-        "Unemployment (%)":   "UNRATE",
-        "Fed Funds Rate (%)": "FEDFUNDS",
-        "10Y Treasury (%)":   "DGS10",
-        "2Y Treasury (%)":    "DGS2",
-        "GDP Growth (QoQ %)": "A191RL1Q225SBEA",
-        "PCE Inflation (%)":  "PCEPI",
-        "ISM Manufacturing":  "MANEMP",
-        "Retail Sales (YoY)": "RSAFS",
-        "DXY (USD Index)":    "DTWEXBGS",
-        "VIX":                "VIXCLS",
-    }
-    result = {}
-    for label, sid in ids.items():
+def fetch_fred_series(series_id: str, months: int = 60) -> pd.Series:
+    """Fetch one FRED series (fredapi with key, else public fallback)."""
+    fred, err = _fred_client()
+    if fred is not None:
         try:
-            s = fetch_fred_series(sid, 3)
-            if len(s) >= 2:
-                cur_val  = s.iloc[-1]
-                prev_val = s.iloc[-2]
-                result[label] = {
-                    "value":  cur_val,
-                    "prev":   prev_val,
-                    "change": cur_val - prev_val,
-                    "date":   str(s.index[-1].date()),
-                    "series": s,
-                }
-        except Exception:
-            continue
-    return result
+            s = fred.get_series(series_id)
+            if s is None or len(s) == 0:
+                return pd.Series(dtype=float)
+            s = pd.Series(s).dropna()
+            s.index = pd.to_datetime(s.index)
+            s = pd.to_numeric(s, errors="coerce").dropna()
+            return s.sort_index().iloc[-months:]
+        except Exception as e:
+            log_debug(f"fetch_fred_series fredapi({series_id}) failed: {e}")
+    # fallback path: no key or fredapi failed
+    return _fetch_fred_series_public(series_id, months=months)
 
-def _sector_macro_impact() -> list:
-    """Returns a static impact matrix: macro event → sector impact."""
-    return [
-        {"event": "CPI vyšší než očekáváno",   "Tech": -2.1, "Finance": +1.5, "Energy": +1.2, "Consumer": -1.8, "Healthcare": -0.5, "Real Estate": -2.4},
-        {"event": "CPI nižší než očekáváno",    "Tech": +2.3, "Finance": -0.8, "Energy": -0.9, "Consumer": +1.5, "Healthcare": +0.7, "Real Estate": +2.1},
-        {"event": "Fed zvyšuje sazby",           "Tech": -2.8, "Finance": +1.8, "Energy": +0.4, "Consumer": -1.5, "Healthcare": -0.6, "Real Estate": -3.1},
-        {"event": "Fed snižuje sazby",           "Tech": +3.2, "Finance": -1.2, "Energy": -0.3, "Consumer": +2.1, "Healthcare": +1.1, "Real Estate": +3.5},
-        {"event": "NFP (Jobs) silný",            "Tech": +0.8, "Finance": +1.2, "Energy": +0.6, "Consumer": +1.8, "Healthcare": +0.3, "Real Estate": -0.5},
-        {"event": "NFP (Jobs) slabý",            "Tech": -0.9, "Finance": -1.4, "Energy": -0.7, "Consumer": -2.1, "Healthcare": +0.2, "Real Estate": +0.3},
-        {"event": "GDP silný",                   "Tech": +1.5, "Finance": +1.8, "Energy": +1.1, "Consumer": +2.2, "Healthcare": +0.4, "Real Estate": +0.8},
-        {"event": "GDP slabý / recese",          "Tech": -1.8, "Finance": -2.5, "Energy": -1.3, "Consumer": -3.1, "Healthcare": +1.5, "Real Estate": -1.9},
-        {"event": "USD sílí (DXY +)",            "Tech": -1.2, "Finance": +0.6, "Energy": -1.5, "Consumer": -0.8, "Healthcare": -0.3, "Real Estate": -0.6},
-        {"event": "10Y výnosy stoupají",         "Tech": -2.5, "Finance": +2.1, "Energy": +0.8, "Consumer": -1.1, "Healthcare": -0.9, "Real Estate": -2.8},
-        {"event": "ISM Manufacturing silný",     "Tech": +1.1, "Finance": +0.8, "Energy": +1.4, "Consumer": +0.9, "Healthcare": +0.2, "Real Estate": +0.4},
-        {"event": "Obchodní válka / cla +",      "Tech": -3.1, "Finance": -1.5, "Energy": -0.8, "Consumer": -2.8, "Healthcare": -0.4, "Real Estate": -0.5},
+@st.cache_data(ttl=900)
+def fetch_macro_snapshot() -> dict:
+    """Fetch all key macro indicators used in the macro dashboard."""
+    series_map = _macro_series_map()
+    out = {}
+    for label, sid in series_map.items():
+        s = fetch_fred_series(sid, months=24)
+        if len(s) >= 2:
+            out[label] = {
+                "series_id": sid,
+                "value": float(s.iloc[-1]),
+                "prev": float(s.iloc[-2]),
+                "delta": float(s.iloc[-1] - s.iloc[-2]),
+                "date": str(s.index[-1].date()),
+                "series": s,
+            }
+    return out
+
+@st.cache_data(ttl=3600)
+def compute_sector_macro_corr(period: str = "1y") -> pd.DataFrame:
+    """Rolling relevance matrix based on real historical correlations."""
+    sector_map = {
+        "Tech (XLK)": "XLK",
+        "Finance (XLF)": "XLF",
+        "Energy (XLE)": "XLE",
+        "Consumer (XLY)": "XLY",
+        "Healthcare (XLV)": "XLV",
+        "Real Estate (XLRE)": "XLRE",
+    }
+    macro_map = {
+        "S&P 500 (^GSPC)": "^GSPC",
+        "DXY (DX-Y.NYB)": "DX-Y.NYB",
+        "VIX (^VIX)": "^VIX",
+        "10Y Yield (^TNX)": "^TNX",
+    }
+    prices = {}
+    for label, sym in {**sector_map, **macro_map}.items():
+        try:
+            h = yf.Ticker(sym).history(period=period)["Close"]
+            if h is not None and not h.empty:
+                prices[label] = h
+        except Exception as e:
+            log_debug(f"compute_sector_macro_corr failed for {sym}: {e}")
+    if len(prices) < 5:
+        return pd.DataFrame()
+    px = pd.DataFrame(prices).dropna(how="all").ffill().dropna()
+    if px.empty:
+        return pd.DataFrame()
+    rets = px.pct_change().dropna()
+    if rets.empty:
+        return pd.DataFrame()
+    sector_cols = [c for c in sector_map if c in rets.columns]
+    macro_cols = [c for c in macro_map if c in rets.columns]
+    if not sector_cols or not macro_cols:
+        return pd.DataFrame()
+    mat = pd.DataFrame(index=sector_cols, columns=macro_cols, dtype=float)
+    for s in sector_cols:
+        for m in macro_cols:
+            mat.loc[s, m] = rets[s].corr(rets[m])
+    return mat
+
+def _parse_calendar_number(val) -> float:
+    if val is None:
+        return np.nan
+    txt = str(val).strip()
+    if txt in ("", "-", "N/A", "nan", "None"):
+        return np.nan
+    txt = txt.replace("%", "").replace("K", "").replace("M", "").replace("B", "")
+    txt = txt.replace(",", "")
+    try:
+        return float(txt)
+    except Exception:
+        return np.nan
+
+def _impact_rank(impact_txt: str) -> int:
+    t = (impact_txt or "").lower()
+    if "high" in t:
+        return 3
+    if "medium" in t:
+        return 2
+    if "low" in t:
+        return 1
+    return 0
+
+@st.cache_data(ttl=1800)
+def _fetch_economic_calendar_cached(from_date: str, to_date: str, countries: list, importances: list) -> pd.DataFrame:
+    """
+    Cached fetch wrapper for investpy economic calendar.
+    `from_date`, `to_date` format: dd/mm/yyyy
+    """
+    try:
+        import investpy
+        df = investpy.economic_calendar(
+            from_date=from_date,
+            to_date=to_date,
+            countries=countries if countries else None,
+            importances=importances if importances else None,
+        )
+        if df is None:
+            return pd.DataFrame()
+        return df.copy()
+    except Exception:
+        return pd.DataFrame()
+
+def _economic_calendar_placeholder() -> pd.DataFrame:
+    rows = [
+        ("2026-04-07", "08:30", "🇺🇸 US", "●●●", "US Nonfarm Payrolls", "212K", "190K", "176K"),
+        ("2026-04-07", "08:30", "🇺🇸 US", "●●●", "US Unemployment Rate", "4.1%", "4.2%", "4.2%"),
+        ("2026-04-07", "10:00", "🇺🇸 US", "●●", "ISM Services PMI", "53.1", "52.5", "52.2"),
+        ("2026-04-08", "14:00", "🇺🇸 US", "●●●", "FOMC Interest Rate Decision", "5.25%", "5.25%", "5.25%"),
+        ("2026-04-08", "08:30", "🇪🇺 EU", "●●●", "Eurozone CPI YoY", "2.3%", "2.4%", "2.5%"),
+        ("2026-04-08", "05:00", "🇪🇺 EU", "●●", "Eurozone GDP QoQ", "0.3%", "0.2%", "0.2%"),
+        ("2026-04-09", "02:00", "🇬🇧 UK", "●●", "UK CPI YoY", "2.9%", "3.0%", "3.1%"),
+        ("2026-04-09", "02:00", "🇬🇧 UK", "●", "UK Retail Sales MoM", "0.2%", "-0.1%", "-0.3%"),
+        ("2026-04-10", "21:30", "🇨🇳 CN", "●●", "China Manufacturing PMI", "50.6", "50.2", "49.9"),
+        ("2026-04-10", "21:30", "🇨🇳 CN", "●", "China CPI YoY", "0.8%", "0.7%", "0.6%"),
+        ("2026-04-11", "19:50", "🇯🇵 JP", "●", "Japan Industrial Production MoM", "0.4%", "0.2%", "-0.1%"),
+        ("2026-04-11", "19:50", "🇯🇵 JP", "●●", "BoJ Core CPI", "2.1%", "2.0%", "2.0%"),
     ]
+    ph = pd.DataFrame(rows, columns=["Date", "Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous"])
+    day_map = {"Mon": "Mon", "Tue": "Tue", "Wed": "Wed", "Thu": "Thu", "Fri": "Fri", "Sat": "Sat", "Sun": "Sun"}
+    ph["Day"] = pd.to_datetime(ph["Date"], errors="coerce").dt.strftime("%a").map(day_map).fillna("N/A")
+    a = ph["Actual"].map(_parse_calendar_number)
+    f = ph["Forecast"].map(_parse_calendar_number)
+    ph["Surprise"] = (a - f).map(lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A")
+    ph["_impact_rank"] = ph["Impact"].map(lambda x: 3 if x == "●●●" else 2 if x == "●●" else 1)
+    return ph
+
+def economic_calendar_tab():
+    """Peak quality free Economic Calendar tab using investpy + styled fallback."""
+    st.markdown("<h3 class='grad' style='margin:0 0 .6rem;'>📅 Economic Calendar</h3>", unsafe_allow_html=True)
+    st.caption(f"Current Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} GMT")
+
+    # Quick range filters
+    q1, q2, q3, q4, q5 = st.columns(5)
+    quick = None
+    with q1:
+        if st.button("Yesterday", use_container_width=True, key="ec_yesterday"): quick = "yesterday"
+    with q2:
+        if st.button("Today", use_container_width=True, key="ec_today"): quick = "today"
+    with q3:
+        if st.button("Tomorrow", use_container_width=True, key="ec_tomorrow"): quick = "tomorrow"
+    with q4:
+        if st.button("This Week", use_container_width=True, key="ec_week"): quick = "week"
+    with q5:
+        if st.button("This Month", use_container_width=True, key="ec_month"): quick = "month"
+
+    today = datetime.utcnow().date()
+    default_from, default_to = today, today + timedelta(days=7)
+    if quick == "yesterday":
+        default_from = default_to = today - timedelta(days=1)
+    elif quick == "today":
+        default_from = default_to = today
+    elif quick == "tomorrow":
+        default_from = default_to = today + timedelta(days=1)
+    elif quick == "week":
+        default_from, default_to = today, today + timedelta(days=6)
+    elif quick == "month":
+        default_from, default_to = today, today + timedelta(days=30)
+
+    f1, f2, f3, f4 = st.columns([2, 1.3, 1.2, 1.2])
+    with f1:
+        date_range = st.date_input("Date range", value=(default_from, default_to), key="ec_date_range")
+    with f2:
+        country_ui = st.selectbox("Country", ["All", "USA", "Eurozone", "United Kingdom", "China", "Japan"], index=1, key="ec_country")
+    with f3:
+        impact_ui = st.selectbox("Impact", ["All", "High", "Medium", "Low"], index=0, key="ec_impact")
+    with f4:
+        sort_ui = st.selectbox("Sort by", ["Time", "Impact"], index=0, key="ec_sort")
+
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        d_from, d_to = date_range
+    else:
+        d_from = d_to = date_range
+    if d_from > d_to:
+        d_from, d_to = d_to, d_from
+
+    country_map = {
+        "All": [],
+        "USA": ["united states"],
+        "Eurozone": ["euro zone"],
+        "United Kingdom": ["united kingdom"],
+        "China": ["china"],
+        "Japan": ["japan"],
+    }
+    impact_map = {"All": [], "High": ["high"], "Medium": ["medium"], "Low": ["low"]}
+    country_flags = {
+        "united states": "🇺🇸 US",
+        "euro zone": "🇪🇺 EU",
+        "united kingdom": "🇬🇧 UK",
+        "china": "🇨🇳 CN",
+        "japan": "🇯🇵 JP",
+    }
+
+    with st.spinner("Načítám ekonomický kalendář..."):
+        raw_df = _fetch_economic_calendar_cached(
+            d_from.strftime("%d/%m/%Y"),
+            d_to.strftime("%d/%m/%Y"),
+            country_map.get(country_ui, []),
+            impact_map.get(impact_ui, []),
+        )
+
+    used_placeholder = False
+    if raw_df.empty:
+        used_placeholder = True
+        st.warning("investpy momentálně nevrátil data. Zobrazuji realistický placeholder (duben 2026).")
+        out = _economic_calendar_placeholder()
+    else:
+        df_cols = {c.lower(): c for c in raw_df.columns}
+        col_time = df_cols.get("time", "time") if "time" in df_cols else None
+        col_date = df_cols.get("date", "date") if "date" in df_cols else None
+        col_country = df_cols.get("country", "country") if "country" in df_cols else None
+        col_importance = df_cols.get("importance", "importance") if "importance" in df_cols else None
+        col_event = df_cols.get("event", "event") if "event" in df_cols else None
+        col_actual = df_cols.get("actual", "actual") if "actual" in df_cols else None
+        col_forecast = df_cols.get("forecast", "forecast") if "forecast" in df_cols else None
+        col_previous = df_cols.get("previous", "previous") if "previous" in df_cols else None
+
+        out = pd.DataFrame()
+        if col_date in raw_df.columns:
+            dt_series = pd.to_datetime(raw_df[col_date], errors="coerce")
+            out["Date"] = dt_series.dt.strftime("%Y-%m-%d").fillna(raw_df[col_date].astype(str))
+            out["Day"] = dt_series.dt.strftime("%a").fillna("N/A")
+        else:
+            out["Date"] = d_from.strftime("%Y-%m-%d")
+            out["Day"] = d_from.strftime("%a")
+        out["Time (GMT)"] = raw_df[col_time].astype(str).fillna("N/A") if col_time in raw_df.columns else "N/A"
+        if col_country in raw_df.columns:
+            out["Country"] = raw_df[col_country].astype(str).str.lower().map(country_flags).fillna(raw_df[col_country].astype(str))
+        else:
+            out["Country"] = "N/A"
+        imp_raw = raw_df[col_importance].astype(str) if col_importance in raw_df.columns else pd.Series([""] * len(raw_df))
+
+        def impact_display(txt: str) -> str:
+            t = (txt or "").lower()
+            if "high" in t: return "●●●"
+            if "medium" in t: return "●●"
+            if "low" in t: return "●"
+            return "·"
+
+        out["Impact"] = imp_raw.map(impact_display)
+        out["Event"] = raw_df[col_event].astype(str) if col_event in raw_df.columns else "N/A"
+        out["Actual"] = raw_df[col_actual].astype(str) if col_actual in raw_df.columns else "N/A"
+        out["Forecast"] = raw_df[col_forecast].astype(str) if col_forecast in raw_df.columns else "N/A"
+        out["Previous"] = raw_df[col_previous].astype(str) if col_previous in raw_df.columns else "N/A"
+        out["Surprise"] = (out["Actual"].map(_parse_calendar_number) - out["Forecast"].map(_parse_calendar_number)).map(
+            lambda x: f"{x:+.2f}" if pd.notna(x) else "N/A"
+        )
+        out["_impact_rank"] = imp_raw.map(_impact_rank)
+
+    if "_impact_rank" not in out.columns:
+        out["_impact_rank"] = out["Impact"].map(lambda x: 3 if x == "●●●" else 2 if x == "●●" else 1 if x == "●" else 0)
+
+    if sort_ui == "Impact":
+        out = out.sort_values(["Date", "_impact_rank", "Time (GMT)"], ascending=[True, False, True])
+    else:
+        out = out.sort_values(["Date", "Time (GMT)", "_impact_rank"], ascending=[True, True, False])
+
+    def row_style(row):
+        if row["Impact"] == "●●●":
+            return ["background-color: rgba(244,63,94,0.16)"] * len(row)
+        if row["Impact"] == "●●":
+            return ["background-color: rgba(245,158,11,0.10)"] * len(row)
+        if row["Impact"] == "●":
+            return ["background-color: rgba(34,197,94,0.08)"] * len(row)
+        return [""] * len(row)
+
+    def impact_style(v):
+        if v == "●●●": return "color:#f43f5e;font-weight:800;"
+        if v == "●●": return "color:#f59e0b;font-weight:800;"
+        if v == "●": return "color:#22c55e;font-weight:800;"
+        return "color:#94a3b8;"
+
+    def surprise_style(v):
+        if isinstance(v, str) and v.startswith("+"): return "color:#22c55e;font-weight:700;"
+        if isinstance(v, str) and v.startswith("-"): return "color:#f43f5e;font-weight:700;"
+        return "color:#94a3b8;"
+
+    show_cols = ["Date", "Day", "Time (GMT)", "Country", "Impact", "Event", "Actual", "Forecast", "Previous", "Surprise"]
+    styled = out[show_cols].style.apply(row_style, axis=1).applymap(impact_style, subset=["Impact"]).applymap(
+        surprise_style, subset=["Surprise"]
+    ).set_properties(subset=["Event"], **{"font-weight": "700"})
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    st.markdown(
+        f"""
+        <div class="fa-card" style="margin-top:10px;">
+            <div style="font-weight:700;color:{C['t1']};margin-bottom:6px;">Legenda</div>
+            <div style="font-size:.85rem;color:{C['t2']};line-height:1.7;">
+                ● nízký impact (zelená) · ●● střední impact (oranžová) · ●●● vysoký impact (červená)<br>
+                Surprise = Actual − Forecast (zeleně pozitivní, červeně negativní).
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if hasattr(st, "link_button"):
+        st.link_button("Otevřít plný kalendář na Investing.com", "https://www.investing.com/economic-calendar/")
+    else:
+        st.markdown("[Otevřít plný kalendář na Investing.com](https://www.investing.com/economic-calendar/)")
+    st.caption(
+        "Placeholder data (duben 2026)." if used_placeholder
+        else "Reálná data z investpy. V další verzi přejdeme na stabilnější API (FMP / Trading Economics)."
+    )
 
 def page_makro():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🌍 Makroekonomický Dashboard</h2>", unsafe_allow_html=True)
-    st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Live makro data z FRED (Federal Reserve). Pochopit makro = pochopit, kam půjde trh.</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:.84rem;color:{C['t3']};margin-bottom:1rem;'>"
+        "Makro data jsou načítána z Federal Reserve (FRED) přes <b>fredapi</b> nebo veřejný fallback bez API klíče."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    tab_live, tab_charts, tab_matrix, tab_yield = st.tabs(["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor Impact Matrix", "📐 Yield Curve"])
+    fred_client, fred_error = _fred_client()
+    if fred_error:
+        st.warning(f"fredapi nebyla inicializována ({fred_error}). Přepínám na veřejný FRED fallback bez API klíče.")
+    elif fred_client is None:
+        st.info("Běží veřejný FRED režim bez API klíče (přes pandas_datareader).")
 
-    # ── TAB 1: Live snapshot ──────────────────
+    tab_live, tab_charts, tab_matrix, tab_yield, tab_calendar = st.tabs(
+        ["📊 Live indikátory", "📈 Grafy trendů", "🎯 Sektor × Makro korelace", "📐 Yield Curve", "📅 Economic Calendar"]
+    )
+
+    # ── TAB 1: Live indikátory ───────────────────────────────
     with tab_live:
-        with st.spinner("Načítám FRED data…"):
+        with st.spinner("Načítám live makro indikátory z FRED…"):
             macro = fetch_macro_snapshot()
         if not macro:
-            st.error("Nepodařilo se načíst makro data z FRED.")
+            st.warning(
+                "Nepodařilo se načíst makro data z FRED. "
+                "Zkontrolujte API key (`st.secrets['FRED_API_KEY']`) nebo síťové připojení."
+            )
         else:
-            st.markdown(f"<div style='font-size:.8rem;color:{C['t3']};margin-bottom:1rem;'>Zdroj: Federal Reserve Economic Data (FRED) · St. Louis Fed · Bez API klíče</div>", unsafe_allow_html=True)
-            cols_m = st.columns(4)
-            for i, (label, d) in enumerate(macro.items()):
-                col_m = C["green"] if d["change"] >= 0 else C["red"]
-                icon_m = "▲" if d["change"] >= 0 else "▼"
-                with cols_m[i % 4]:
-                    st.markdown(f"""
-                        <div class="fa-card" style="text-align:center;border-color:{col_m}25;margin-bottom:10px;">
-                            <div style="font-size:.68rem;color:{C['t3']};text-transform:uppercase;letter-spacing:.04em;line-height:1.3;">{label}</div>
-                            <div class="mono" style="font-size:1.5rem;font-weight:800;color:{C['t1']};margin:5px 0;">{d['value']:.2f}</div>
-                            <div style="font-size:.78rem;font-weight:700;color:{col_m};">{icon_m} {abs(d['change']):.2f}</div>
-                            <div style="font-size:.68rem;color:{C['t3']};margin-top:2px;">{d['date']}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            # Yield curve spread (10Y - 2Y)
-            if "10Y Treasury (%)" in macro and "2Y Treasury (%)" in macro:
-                spread = macro["10Y Treasury (%)"]["value"] - macro["2Y Treasury (%)"]["value"]
-                spread_col = C["green"] if spread >= 0 else C["red"]
-                inverted = spread < 0
-                st.markdown(f"""
-                    <div class="fa-card" style="border-color:{spread_col}40;margin-top:8px;">
-                        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-                            <div>
-                                <div style="font-size:.72rem;color:{C['t2']};text-transform:uppercase;">10Y – 2Y Yield Spread (inverze křivky)</div>
-                                <div class="mono" style="font-size:2rem;font-weight:800;color:{spread_col};">{spread:+.2f}%</div>
-                            </div>
-                            <div style="font-size:.83rem;color:{C['t2']};">
-                                {'⚠️ <b style="color:'+C["red"]+';">Inverzní výnosová křivka</b> — historicky předchází recesi o 12–18 měsíců. Každá recese od 1970 byla předcházena inverzí.' if inverted else
-                                 '✅ <b style="color:'+C["green"]+';">Normální výnosová křivka</b> — ekonomika se jeví zdravě. Kladný spread = banky vydělávají na úvěrech.'}
-                            </div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-    # ── TAB 2: Trend charts ───────────────────
-    with tab_charts:
-        chart_choice = st.selectbox("Vyberte indikátor", [
-            "CPI (YoY %)", "Fed Funds Rate (%)", "10Y Treasury (%)", "Unemployment (%)",
-            "GDP Growth (QoQ %)", "DXY (USD Index)", "VIX"
-        ])
-        fred_map = {
-            "CPI (YoY %)":        "CPIAUCSL",
-            "Fed Funds Rate (%)": "FEDFUNDS",
-            "10Y Treasury (%)":   "DGS10",
-            "Unemployment (%)":   "UNRATE",
-            "GDP Growth (QoQ %)": "A191RL1Q225SBEA",
-            "DXY (USD Index)":    "DTWEXBGS",
-            "VIX":                "VIXCLS",
-        }
-        n_pts = st.slider("Počet datových bodů", 12, 120, 48)
-        with st.spinner(f"Načítám {chart_choice}…"):
-            s = fetch_fred_series(fred_map[chart_choice], n_pts)
-        if s.empty:
-            st.warning("Data nedostupná.")
-        else:
-            # Overlay S&P 500 for context
-            show_sp = st.checkbox("Překrýt S&P 500 (normalizovaný)", value=True)
-            mc_fig = make_subplots(specs=[[{"secondary_y": True}]])
-            mc_fig.add_trace(go.Scatter(
-                x=s.index, y=s.values, name=chart_choice,
-                line=dict(color=C["blue"], width=2.2),
-                fill="tozeroy", fillcolor=with_alpha(C["blue"], 0.09),
-            ), secondary_y=False)
-            if show_sp:
-                try:
-                    sp = yf.Ticker("^GSPC").history(period="10y")["Close"].resample("MS").last()
-                    sp = sp[sp.index >= s.index[0]]
-                    mc_fig.add_trace(go.Scatter(
-                        x=sp.index, y=sp.values, name="S&P 500",
-                        line=dict(color=C["t3"], width=1.5, dash="dash"), opacity=.6,
-                    ), secondary_y=True)
-                except Exception:
-                    pass
-            mc_fig.update_layout(**CHART_LAYOUT, height=380, showlegend=True,
-                legend=dict(orientation="h", y=1.02, bgcolor="rgba(0,0,0,0)"))
-            mc_fig.update_yaxes(title_text=chart_choice, secondary_y=False,
-                                tickfont=dict(color=C["t2"]))
-            mc_fig.update_yaxes(title_text="S&P 500", secondary_y=True,
-                                tickfont=dict(color=C["t3"]), showgrid=False)
-            st.plotly_chart(mc_fig, use_container_width=True, config={"displayModeBar": False})
-
-    # ── TAB 3: Sector Impact Matrix ───────────
-    with tab_matrix:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Průměrná historická reakce sektorů na makro události. Pomáhá rozhodovat, jak přesunout portfolio před/po zveřejnění dat.</div>", unsafe_allow_html=True)
-        impact_data = _sector_macro_impact()
-        sectors = ["Tech", "Finance", "Energy", "Consumer", "Healthcare", "Real Estate"]
-        events  = [d["event"] for d in impact_data]
-        z_vals  = [[d[s] for s in sectors] for d in impact_data]
-        text_vals = [[f"{v:+.1f}%" for v in row] for row in z_vals]
-
-        heat_fig = go.Figure(go.Heatmap(
-            z=z_vals, x=sectors, y=events,
-            text=text_vals, texttemplate="%{text}",
-            colorscale=[
-                [0.0,  "#ff3d5a"],
-                [0.45, "#1a1a22"],
-                [0.55, "#1a1a22"],
-                [1.0,  "#00e676"],
-            ],
-            zmin=-4, zmax=4,
-            showscale=True,
-            colorbar=dict(tickfont=dict(color=C["t2"]),
-                          title=dict(text="% dopad", font=dict(color=C["t2"]))),
-        ))
-        heat_fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            height=520, margin=dict(l=10, r=10, t=10, b=10),
-            font=dict(color=C["t1"]),
-            xaxis=dict(tickfont=dict(color=C["t2"])),
-            yaxis=dict(tickfont=dict(color=C["t2"]), autorange="reversed"),
-        )
-        st.plotly_chart(heat_fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"""
-            <div style="padding:8px 14px;background:{C['bg2']};border-radius:8px;font-size:.75rem;color:{C['t3']};margin-top:6px;">
-            ⚠️ Hodnoty jsou průměrné historické reakce z dat 2010–2024. Minulé reakce nezaručují budoucí výsledky. Používej jako orientaci, ne jako přesnou předpověď.
-            </div>
-        """, unsafe_allow_html=True)
-
-    # ── TAB 4: Yield Curve ────────────────────
-    with tab_yield:
-        st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Výnosová křivka US Treasuries. Inverze (krátké výnosy > dlouhé) = jeden z nejspolehlivějších prediktorů recese.</div>", unsafe_allow_html=True)
-        maturities = {"3M": "DGS3MO", "1Y": "DGS1", "2Y": "DGS2", "5Y": "DGS5", "7Y": "DGS7", "10Y": "DGS10", "20Y": "DGS20", "30Y": "DGS30"}
-        with st.spinner("Načítám výnosovou křivku…"):
-            yields = {}
-            for mat, sid in maturities.items():
-                s = fetch_fred_series(sid, 2)
-                if len(s) >= 1:
-                    yields[mat] = s.iloc[-1]
-        if yields:
-            labels = list(yields.keys())
-            values = list(yields.values())
-            min_v  = min(values)
-            yc_col = C["red"] if values[0] > values[-1] else C["green"]
-            yc_fig = go.Figure()
-            yc_fig.add_trace(go.Scatter(
-                x=labels, y=values, mode="lines+markers",
-                line=dict(color=yc_col, width=2.5),
-                marker=dict(size=9, color=yc_col),
-                fill="tozeroy", fillcolor=with_alpha(yc_col, 0.09),
-            ))
-            yc_fig.add_hline(y=0, line_color=C["border"])
-            yc_fig.update_layout(**CHART_LAYOUT, height=320, showlegend=False)
-            yc_fig.update_yaxes(ticksuffix="%")
-            st.plotly_chart(yc_fig, use_container_width=True, config={"displayModeBar": False})
-
-            # Spread table
-            st.markdown(f"<div style='font-weight:600;color:{C['t2']};margin:8px 0 6px;'>Klíčové spready</div>", unsafe_allow_html=True)
-            spreads_list = [
-                ("10Y – 2Y", yields.get("10Y", 0) - yields.get("2Y", 0)),
-                ("10Y – 3M", yields.get("10Y", 0) - yields.get("3M", 0)),
-                ("30Y – 10Y", yields.get("30Y", 0) - yields.get("10Y", 0)),
-                ("5Y – 2Y", yields.get("5Y", 0) - yields.get("2Y", 0)),
+            key_order = [
+                "CPI YoY (%)",
+                "Unemployment Rate (%)",
+                "FED Funds Rate (%)",
+                "GDP Growth QoQ (%)",
+                "10Y Treasury Yield (%)",
+                "Inflation Expectations 10Y (%)",
             ]
-            sp_cols = st.columns(4)
-            for i, (lbl, val) in enumerate(spreads_list):
-                with sp_cols[i]:
-                    sp_c = C["green"] if val >= 0 else C["red"]
-                    st.markdown(f"""
-                        <div class="fa-card" style="text-align:center;border-color:{sp_c}30;">
-                            <div style="font-size:.7rem;color:{C['t2']};">{lbl}</div>
-                            <div class="mono" style="font-size:1.3rem;font-weight:800;color:{sp_c};">{val:+.2f}%</div>
-                            <div style="font-size:.7rem;color:{C['t3']};margin-top:2px;">{'Inverzní ⚠️' if val<0 else 'Normální ✅'}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            cols = st.columns(3)
+            for i, label in enumerate(key_order):
+                d = macro.get(label)
+                with cols[i % 3]:
+                    if d:
+                        st.metric(label, f"{d['value']:.2f}", f"{d['delta']:+.2f}")
+                        st.caption(f"Poslední update: {d['date']}")
+                    else:
+                        st.metric(label, "N/A", "N/A")
+                        st.caption("Data nedostupná")
+
+    # ── TAB 2: Grafy trendů ──────────────────────────────────
+    with tab_charts:
+        series_map = _macro_series_map()
+        indicator = st.selectbox("Vyber indikátor", list(series_map.keys()), key="macro_indicator_select")
+        months = st.slider("Počet měsíců", 12, 120, 60, key="macro_months_slider")
+
+        with st.spinner(f"Načítám trend: {indicator}…"):
+            s = fetch_fred_series(series_map[indicator], months=months)
+
+        if s.empty:
+            st.warning("Data nedostupná pro vybraný indikátor.")
+        else:
+            df_plot = pd.DataFrame({"Date": s.index, "Value": s.values})
+            fig = px.line(df_plot, x="Date", y="Value", title=indicator, template="plotly_dark")
+            fig.update_layout(**CHART_LAYOUT, height=420)
+            fig.update_traces(line=dict(width=2.5, color=C["blue"]))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ── TAB 3: Sektor × Makro korelace (placeholder) ─────────
+    with tab_matrix:
+        st.info(
+            "Pro reálnou matici korelací potřebujeme propojit výnosy sektorových ETF "
+            "(např. XLK, XLF, XLE…) z yfinance s makro sériemi z FRED."
+        )
+        placeholder_df = pd.DataFrame(
+            {
+                "Sektor": ["Tech", "Finance", "Energy", "Healthcare"],
+                "Korelace s CPI": [0.22, -0.08, 0.31, 0.05],
+                "Korelace s 10Y výnosem": [-0.41, 0.27, 0.19, -0.11],
+            }
+        )
+        st.dataframe(placeholder_df, use_container_width=True, hide_index=True)
+
+    # ── TAB 4: Yield Curve ───────────────────────────────────
+    with tab_yield:
+        with st.spinner("Načítám Yield Curve data z FRED…"):
+            yc_map = {
+                "3M": "DGS3MO",
+                "2Y": "DGS2",
+                "5Y": "DGS5",
+                "10Y": "DGS10",
+                "30Y": "DGS30",
+            }
+            yc_data = {k: fetch_fred_series(v, months=24) for k, v in yc_map.items()}
+
+        if not yc_data or yc_data["10Y"].empty or yc_data["2Y"].empty:
+            st.warning("Yield Curve data nejsou dostupná.")
+        else:
+            latest_curve = pd.DataFrame(
+                {
+                    "Maturity": list(yc_map.keys()),
+                    "Yield": [yc_data[k].iloc[-1] if len(yc_data[k]) else np.nan for k in yc_map.keys()],
+                }
+            ).dropna()
+            fig_curve = px.line(
+                latest_curve,
+                x="Maturity",
+                y="Yield",
+                markers=True,
+                title="US Treasury Yield Curve (latest)",
+                template="plotly_dark",
+            )
+            fig_curve.update_layout(**CHART_LAYOUT, height=380)
+            fig_curve.update_traces(line=dict(width=3, color=C["blue"]))
+            st.plotly_chart(fig_curve, use_container_width=True, config={"displayModeBar": False})
+
+            spread = float(yc_data["10Y"].iloc[-1] - yc_data["2Y"].iloc[-1])
+            prev_spread = float(yc_data["10Y"].iloc[-2] - yc_data["2Y"].iloc[-2]) if len(yc_data["10Y"]) > 1 and len(yc_data["2Y"]) > 1 else spread
+            st.metric("10Y - 2Y Spread", f"{spread:+.2f}%", f"{(spread - prev_spread):+.2f}")
+
+    # ── TAB 5: Economic Calendar (placeholder) ───────────────
+    with tab_calendar:
+        economic_calendar_tab()
 
 
 # ─────────────────────────────────────────────
@@ -3123,7 +3646,7 @@ def page_backtesting():
 
     bc1, bc2, bc3, bc4 = st.columns(4)
     with bc1:
-        bt_ticker = st.text_input("Ticker", value="AAPL").upper().strip()
+        bt_ticker = normalized_ticker_input("Ticker", key="bt_ticker", default="AAPL")
         bt_period = st.selectbox("Období", ["1y","2y","3y","5y","10y"], index=2)
     with bc2:
         strategy = st.selectbox("Strategie", ["SMA Crossover","EMA Crossover","RSI Mean Reversion","MACD Crossover"])
@@ -3277,7 +3800,7 @@ def page_monte_carlo():
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Simuluje tisíce možných cenových trajektorií na základě historické volatility. Vizualizuj riziko a pravděpodobnost ziskovosti.</div>", unsafe_allow_html=True)
 
     mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1: mc_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+    with mc1: mc_ticker = normalized_ticker_input("Ticker", key="mc_ticker", default=st.session_state.get("ticker","AAPL"))
     with mc2: mc_sims   = st.select_slider("Počet simulací", options=[100, 500, 1000, 5000, 10000], value=1000)
     with mc3: mc_days   = st.slider("Horizont (dní)", 30, 365, 252)
     with mc4: mc_period = st.selectbox("Historická data (báze)", ["1y","2y","3y","5y"], index=1)
@@ -3484,11 +4007,12 @@ def compute_piotroski(info: dict, financials_df=None, balance_df=None) -> dict:
 def page_piotroski():
     st.markdown("<h2 class='grad' style='margin:0 0 1rem;'>🏆 Piotroski F-Score + Fundamentální Screener</h2>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:.83rem;color:{C['t3']};margin-bottom:1rem;'>Piotroski F-Score (0–9) měří kvalitu fundamentů. Score 8–9 = silný fundament. Kombinuje profitabilitu, zadluženost a provozní efektivitu.</div>", unsafe_allow_html=True)
+    st.caption("ℹ️ Některá kritéria používají proxy metriky (např. ROE vs ROA), pokud nejsou plná data dostupná.")
 
     tab_single, tab_screen = st.tabs(["🔍 Analýza jedné akcie", "📋 Batch screener"])
 
     with tab_single:
-        ps_ticker = st.text_input("Ticker", value=st.session_state.get("ticker","AAPL")).upper().strip()
+        ps_ticker = normalized_ticker_input("Ticker", key="ps_ticker", default=st.session_state.get("ticker","AAPL"))
         if st.button("📊 Spočítat F-Score", use_container_width=True):
             with st.spinner(f"Načítám fundamenty pro {ps_ticker}…"):
                 _, ps_info = fetch_stock(ps_ticker, "1y")
@@ -3610,6 +4134,8 @@ def main():
     data = load_data()
     triggered = [a for a in data.get("alerts",[]) if not a.get("triggered")]
     # (full check happens in alerts page to avoid slowing every page load)
+    if triggered:
+        st.warning(f"🔔 Máš {len(triggered)} aktivních alertů ke kontrole v záložce Alerty.")
 
     page = st.session_state["page"]
     ROUTER = {
